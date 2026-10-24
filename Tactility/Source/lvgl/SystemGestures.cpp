@@ -12,7 +12,7 @@
 #include <Tactility/lvgl/SystemWindow.h>
 
 #if defined(CONFIG_TT_MOBILE_HOME)
-#include <Tactility/service/displayidle/LockScreen.h>
+#include <Tactility/service/displayidle/DisplayIdleService.h>
 #endif
 
 #include <app/event.h>
@@ -27,11 +27,6 @@
 #include <cstring>
 
 namespace tt::lvgl {
-
-#if defined(CONFIG_TT_MOBILE_HOME)
-using service::displayidle::lockScreenIsVisible;
-using service::displayidle::lockScreenRequestUnlock;
-#endif
 
 namespace {
 
@@ -121,7 +116,8 @@ void onHoldTimer(lv_timer_t* timer) {
         return;
     }
 #if defined(CONFIG_TT_MOBILE_HOME)
-    if (lockScreenIsVisible()) {
+    auto display_idle = service::displayidle::findService();
+    if (display_idle != nullptr && display_idle->isLocked()) {
         // The press woke the display; it must not hold its way into the recents switcher
         clearPress();
         return;
@@ -171,8 +167,14 @@ void onIndevPressed(lv_event_t* event) {
     lv_indev_get_point(indev, &point);
 
 #if defined(CONFIG_TT_MOBILE_HOME)
-    // The lock takes any press, not just one from an edge: a swipe up anywhere unlocks it
-    if (lockScreenIsVisible()) {
+    auto display_idle = service::displayidle::findService();
+    if (display_idle != nullptr && display_idle->isLocked()) {
+        if (!display_idle->isLockScreenVisible()) {
+            // The screen is off and locked: consume the wake press so it cannot click or navigate
+            lv_indev_wait_release(indev);
+            return;
+        }
+        // The lock takes any press, not just one from an edge: a swipe up anywhere unlocks it
         state.indev = indev;
         state.edge = SystemGestureEdge::None;
         state.press = point;
@@ -230,10 +232,11 @@ void onIndevReleased(lv_event_t* event) {
     lv_indev_get_point(indev, &point);
 
 #if defined(CONFIG_TT_MOBILE_HOME)
-    if (lockScreenIsVisible()) {
-        if (press_started_locked && systemGestureIsSwipeUp(press.x, press.y, point.x, point.y)) {
+    auto display_idle = service::displayidle::findService();
+    if (display_idle != nullptr && display_idle->isLocked()) {
+        if (display_idle->isLockScreenVisible() && press_started_locked && systemGestureIsSwipeUp(press.x, press.y, point.x, point.y)) {
             lv_indev_reset(indev, nullptr);
-            lockScreenRequestUnlock();
+            display_idle->requestUnlock();
         }
         return;
     }

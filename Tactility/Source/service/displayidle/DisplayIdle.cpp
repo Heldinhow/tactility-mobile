@@ -153,6 +153,18 @@ void DisplayIdleService::updateScreensaver() {
 }
 
 #if defined(CONFIG_TT_MOBILE_HOME)
+bool DisplayIdleService::isLocked() const {
+    return lockState != LockState::Unlocked;
+}
+
+bool DisplayIdleService::isLockScreenVisible() const {
+    return lockScreenIsVisible(lockWidgets);
+}
+
+void DisplayIdleService::requestUnlock() {
+    unlock();
+}
+
 void DisplayIdleService::handleLockTick(uint32_t inactive_ms) {
     if (!hasDisplayWithBacklight()) {
         return;
@@ -182,9 +194,9 @@ void DisplayIdleService::handleLockTick(uint32_t inactive_ms) {
         window_manager_overlay_hide();
     }
     if (effects.hideLock) {
-        lockScreenHide();
+        lockScreenHide(lockWidgets);
     }
-    if (effects.showLock && !lockScreenShow()) {
+    if (effects.showLock && !lockScreenShow(lockWidgets)) {
         // Fail open: never leave the panel on without a visible way to unlock
         lockState = LockState::Unlocked;
         effects.backlightOn = true;
@@ -209,7 +221,7 @@ void DisplayIdleService::unlock() {
     LockEffects effects;
     lockState = nextLockState(lockState, LockEvent::Unlock, effects);
     if (effects.hideLock) {
-        lockScreenHide();
+        lockScreenHide(lockWidgets);
     }
     if (effects.backlightOn) {
         setBacklightBrightness(cachedDisplaySettings.backlightDuty);
@@ -315,7 +327,7 @@ bool DisplayIdleService::onStart(ServiceContext& service) {
 
 #if defined(CONFIG_TT_MOBILE_HOME)
     lockState = LockState::Unlocked;
-    lockScreenSetUnlockCallback(&DisplayIdleService::onLockUnlockRequested, this);
+    lockScreenSetUnlockCallback(lockWidgets, &DisplayIdleService::onLockUnlockRequested, this);
 #endif
 
     return true;
@@ -328,11 +340,16 @@ void DisplayIdleService::onStop(ServiceContext& service) {
     }
 
 #if defined(CONFIG_TT_MOBILE_HOME)
-    if (lvgl_try_lock(100)) {
-        lockScreenHide();
-        lvgl_unlock();
+    // The lock widgets may still be on screen if the service was stopped while locked
+    for (int attempt = 0; attempt < 5 && lockWidgets != nullptr; attempt++) {
+        if (lvgl_try_lock(100)) {
+            lockScreenHide(lockWidgets);
+            lvgl_unlock();
+            break;
+        }
+        delay_millis(50);
     }
-    lockScreenSetUnlockCallback(nullptr, nullptr);
+    lockScreenSetUnlockCallback(lockWidgets, nullptr, nullptr);
     lockState = LockState::Unlocked;
 #endif
     if (screensaverOverlay) {

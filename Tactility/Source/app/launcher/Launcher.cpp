@@ -105,6 +105,7 @@ struct Context {
     lv_obj_t* ampmLabel = nullptr;
     lv_obj_t* dateLabel = nullptr;
     lv_timer_t* clockTimer = nullptr;
+    lvgl::ClockFont* clockFont = nullptr;
     char dateText[32] = {};
     DockEntry dockEntries[4] = {};
     size_t dockEntryCount = 0;
@@ -118,6 +119,14 @@ struct Context {
         .onPageChanged = nullptr,
         .userData = this,
     } };
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+    ~Context() {
+        if (clockFont != nullptr) {
+            lvgl::destroyClockFont(clockFont);
+        }
+    }
+#endif
 };
 
 std::vector<TileGridItem> collectItems(void* userData) {
@@ -259,9 +268,9 @@ static void createHomeHeader(lv_obj_t* parent, Context* ctx) {
     lv_obj_set_size(header, LV_PCT(100), LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(header, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(header, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_top(header, 8, LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_bottom(header, 4, LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_row(header, 2, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_top(header, LV_DPX(8), LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_bottom(header, LV_DPX(4), LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_row(header, LV_DPX(2), LV_STATE_DEFAULT);
     lv_obj_set_scrollable(header, false);
 
     auto* clock_row = lv_obj_create(header);
@@ -269,16 +278,23 @@ static void createHomeHeader(lv_obj_t* parent, Context* ctx) {
     lv_obj_set_size(clock_row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(clock_row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(clock_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
-    lv_obj_set_style_pad_column(clock_row, 4, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_column(clock_row, LV_DPX(4), LV_STATE_DEFAULT);
     lv_obj_set_scrollable(clock_row, false);
 
+    if (ctx->clockFont == nullptr) {
+        ctx->clockFont = lvgl::loadClockFont();
+    }
+    const lv_font_t* clock_font = ctx->clockFont != nullptr
+        ? ctx->clockFont->lvglFont
+        : lvgl_get_text_font(FONT_SIZE_LARGE);
+
     ctx->clockLabel = lv_label_create(clock_row);
-    lv_obj_set_style_text_font(ctx->clockLabel, lvgl::getClockFont(), LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ctx->clockLabel, clock_font, LV_STATE_DEFAULT);
     lv_label_set_text(ctx->clockLabel, "--:--");
 
     ctx->ampmLabel = lv_label_create(clock_row);
     lv_obj_set_style_text_font(ctx->ampmLabel, lvgl_get_text_font(FONT_SIZE_SMALL), LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_bottom(ctx->ampmLabel, 3, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_bottom(ctx->ampmLabel, LV_DPX(3), LV_STATE_DEFAULT);
     lv_obj_set_hidden(ctx->ampmLabel, true);
 
     ctx->dateLabel = lv_label_create(header);
@@ -310,8 +326,8 @@ static void createDock(lv_obj_t* parent, Context* ctx) {
     lv_obj_set_size(dock, LV_PCT(100), LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(dock, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(dock, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_all(dock, 4, LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_column(dock, 8, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(dock, LV_DPX(4), LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_column(dock, LV_DPX(8), LV_STATE_DEFAULT);
     lv_obj_set_scrollable(dock, false);
 
     ctx->dockEntryCount = 0;
@@ -376,6 +392,10 @@ void destroyWidgets(void* userData) {
     ctx->dateLabel = nullptr;
     ctx->dateText[0] = '\0';
     ctx->dockEntryCount = 0;
+    if (ctx->clockFont != nullptr) {
+        lvgl::destroyClockFont(ctx->clockFont);
+        ctx->clockFont = nullptr;
+    }
 #else
     lvgl::systemBarsRemoveListener(ctx->systemBarsListener);
     ctx->systemBarsListener = 0;

@@ -7,6 +7,10 @@
 #include <Tactility/settings/DisplaySettings.h>
 #include <Tactility/settings/RadioSettings.h>
 
+#ifdef ESP_PLATFORM
+#include <Tactility/service/displayidle/DisplayIdleService.h>
+#endif
+
 #include <app/manager.h>
 #include <app/start.h>
 
@@ -157,6 +161,11 @@ static void saveBrightness(void* context) {
     auto display_settings = settings::display::loadOrGetDefault();
     display_settings.backlightDuty = brightness;
     settings::display::save(display_settings);
+#ifdef ESP_PLATFORM
+    if (auto display_idle = service::displayidle::findService()) {
+        display_idle->reloadSettings();
+    }
+#endif
 }
 
 // The brightness that the panel changed, saved once when it closes instead of on every slider step
@@ -323,7 +332,7 @@ static lv_obj_t* createSliderRow(lv_obj_t* parent, const char* icon, int32_t val
     lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(row, 8, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_column(row, LV_DPX(8), LV_STATE_DEFAULT);
     lv_obj_set_scrollable(row, false);
 
     auto* icon_label = lv_label_create(row);
@@ -463,6 +472,13 @@ static void createWidgets(lv_obj_t* parent, void* /*userData*/) {
 }
 
 void systemMenuShow() {
+#if defined(CONFIG_TT_MOBILE_HOME)
+    if (auto display_idle = service::displayidle::findService()) {
+        if (display_idle->isLocked()) {
+            return;
+        }
+    }
+#endif
     brightness_state.changed = false;
     window_manager_overlay_show(createWidgets, onPanelClosed, nullptr);
 }

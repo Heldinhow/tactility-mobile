@@ -22,6 +22,10 @@ namespace tt::service::displayidle {
 
 class Screensaver;
 
+#if defined(CONFIG_TT_MOBILE_HOME)
+struct LockWidgets;
+#endif
+
 class DisplayIdleService final : public Service {
 
     std::unique_ptr<Timer> timer;
@@ -60,6 +64,7 @@ class DisplayIdleService final : public Service {
 
 #if defined(CONFIG_TT_MOBILE_HOME)
     LockState lockState = LockState::Unlocked;
+    LockWidgets* lockWidgets = nullptr;
     void handleLockTick(uint32_t inactiveMs);
     void unlock();
     static void onLockUnlockRequested(void* context);
@@ -68,6 +73,15 @@ class DisplayIdleService final : public Service {
 public:
     bool onStart(ServiceContext& service) override;
     void onStop(ServiceContext& service) override;
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+    /** @return true while the screensaver type is Lock and the display is locked (on or off) */
+    bool isLocked() const;
+    /** @return true while the lock overlay is on screen */
+    bool isLockScreenVisible() const;
+    /** Asks the lock to unlock, e.g. from the system gesture layer. */
+    void requestUnlock();
+#endif
 
     /**
      * Force the screensaver to start immediately, regardless of idle timeout.

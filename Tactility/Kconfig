@@ -103,6 +103,7 @@ menu "Tactility App"
     config TT_MOBILE_HOME
         bool "Phone-style Home and lock screen"
         default n
+        depends on TT_SYSTEM_GESTURES
         help
             Replaces the launcher UI with a Home screen (clock, app grid and dock) and adds the
             Lock screensaver type. The quick-panel volume control is independent of this option.

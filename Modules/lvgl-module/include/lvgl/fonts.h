@@ -12,8 +12,6 @@ enum LvglFontSize {
     FONT_SIZE_SMALL,
     FONT_SIZE_DEFAULT,
     FONT_SIZE_LARGE,
-    /** Digits and separators only, for the Home and lock clocks */
-    FONT_SIZE_CLOCK,
 };
 
 #define LVGL_ICON_FONT_SHARED LVGL_ICON_FONT_SHARED_DEFAULT

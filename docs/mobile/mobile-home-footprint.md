@@ -18,33 +18,29 @@ Status: implemented on `feat/mobile-home`, device `es3c28p`, build with
 
 | Metric | Before | After | Delta |
 |---|---:|---:|---:|
-| `Tactility.bin` | 3,885,008 B | 3,892,624 B | **+7,616 B** |
-| Flash `.text` (code) | 2,766,982 B | 2,775,342 B | +8,360 B |
-| Flash `.rodata` | 961,872 B | 965,056 B | +3,184 B |
-| Static DRAM (`.data` + `.bss`) | 65,007 B | 65,023 B | **+16 B** |
-| DIRAM in use | 167,494 B (49.01%) | 167,542 B (49.02%) | +48 B |
+| `Tactility.bin` | 3,885,008 B | 3,894,512 B | **+9,504 B** |
+| Flash `.text` (code) | 2,766,982 B | 2,777,186 B | +10,204 B |
+| Flash `.rodata` | 961,872 B | 965,104 B | +3,232 B |
+| Static DRAM (`.data` + `.bss`) | 65,007 B | 65,007 B | **0 B** |
+| DIRAM in use | 167,494 B (49.01%) | 167,526 B (49.02%) | +32 B |
 | IRAM | 16,384 B (100%) | 16,384 B (100%) | 0 B |
 
 The clock font is 2,828 B of that `.rodata` (`text_clock_35_4bpp_53b8b701.bin`; digits, colon,
 hyphen and space only). The remaining flash growth is the Home, dock, lock and resolver code.
 
-The flagged-off build is 3,885,808 B, i.e. 800 B above the same baseline: the quick-panel volume
+The flagged-off build is 3,885,424 B, i.e. 416 B above the same baseline: the quick-panel volume
 row and the enabled ES3C28P backlight are shared changes, not part of `TT_MOBILE_HOME`. Its
 generated fonts contain no clock font.
 
 ### Budget
 
-- Flash: **+7,616 B** against a +20 KB cap. Met.
+- Flash: **+9,504 B** against a +20 KB cap. Met.
 - IRAM: **0 B**. Met.
-- Static DRAM: **+16 B** against a 0 B target. **Not met by 16 B.**
+- Static DRAM: **0 B** against a 0 B target. Met.
 
-The 16 B are the clock font registry slot (`text_fonts[FONT_SIZE_CLOCK]`, 8 B) plus the static
-lock-overlay pointer and its alignment (8 B). The larger lock state was moved to the heap: the
-`LockWidgets` struct and its callbacks used to be static and now live in one allocation owned by
-the idle service, which is why the static delta is 16 B instead of about 80 B. Removing the last
-16 B would mean either a dedicated clock-font pointer instead of the registry slot (a small font
-loader refactor) or moving the lock pointer into the idle service; both are follow-ups if the 0 B
-target is treated as strict.
+The clock font is no longer a static font-registry slot: the Home and lock screen load it on
+demand and own it for as long as their widgets exist. The lock overlay state is a member of the
+idle service (which is itself heap-allocated), so the lock pointer is not static either.
 
 ## Runtime heap estimate
 
@@ -59,8 +55,9 @@ bottom bar. Sizes are from the final ELF (`sizeof(lv_obj_t)` 56 B, `lv_obj_spec_
 | **Home net** | **~0.9 KB** |
 | Lock overlay while visible (root, labels, hint, timer, group) | ~0.9 KB |
 | `LockWidgets` allocation owned by the idle service | ~0.1 KB |
-| Clock font object loaded at boot | ~0.2 KB |
-| **Steady Home + lock widget total** | **~2.1 KB** |
+| Clock font loaded for the Home | ~0.2 KB |
+| Clock font loaded while the lock is visible | ~0.2 KB |
+| **Steady Home + lock widget total** | **~2.3 KB** |
 
 The two model vectors used to build one page (`collectHomeApps` and `resolveHomeItems`) are
 transient: with about 20 installed apps they add roughly 3.2 KB while the grid repopulates and are
@@ -68,7 +65,7 @@ freed immediately afterwards. They are not steady-state; the launcher grid's own
 already existed. The lock overlay is freed when the screen goes off and rebuilt on wake, so the
 per-cycle allocations do not accumulate.
 
-The steady-state target of 4 KB is met (~2.1 KB). The transient rebuild peak is not part of that
+The steady-state target of 4 KB is met (~2.3 KB). The transient rebuild peak is not part of that
 target; if it matters, the resolver can fill the grid vector directly in a follow-up.
 
 ## Verification
@@ -77,9 +74,9 @@ target; if it matters, the resolver can fill the grid vector directly in a follo
 - `idf.py build` green with the flag removed (old launcher, no lock, no clock font).
 - Pure tests, compiled standalone with doctest:
   - `HomeClockTest`: 4 cases, 19 assertions.
-  - `HomeModelTest`: 9 cases, 30 assertions.
+  - `HomeModelTest`: 10 cases, 31 assertions.
   - `LockStateTest`: 8 cases, 35 assertions.
-  - Total: 21 cases, 84 assertions, all passing.
+  - Total: 22 cases, 85 assertions, all passing.
 - No device was flashed in this workflow. The owner runs the checklist below after flashing.
 
 ### Owner checklist

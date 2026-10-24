@@ -63,7 +63,16 @@ void loadFonts(const FontConfiguration& configuration);
  */
 BinFont* loadMonoFont();
 
-/** @return the digits-only clock font, or the large text font when it isn't available */
-const lv_font_t* getClockFont();
+/** A digits-only font loaded for the Home or lock screen, owned by the caller. */
+struct ClockFont {
+    BinFont* binFont;
+    lv_font_t* lvglFont;
+};
+
+/** Loads the clock font from the firmware or the font cache; nullptr when it isn't available. */
+ClockFont* loadClockFont();
+
+/** Releases a font from loadClockFont(). */
+void destroyClockFont(ClockFont* font);
 
 }

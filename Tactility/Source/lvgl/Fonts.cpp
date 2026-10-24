@@ -18,6 +18,7 @@
 #include <lvgl/icons/names.h>
 #include <tactility/concurrent/mutex.h>
 #include <tactility/log.h>
+#include <tactility/Memory.hpp>
 #include <tactility/memory.h>
 
 #include <cstdlib>
@@ -57,8 +58,6 @@ struct FontRequest {
 struct TextFontDefinition {
     LvglFontSize id;
     const char* name;
-    /** Only rasterize the clock glyphs, regardless of the source font */
-    bool clockSubset = false;
 };
 
 struct IconFontDefinition {
@@ -72,9 +71,6 @@ constexpr TextFontDefinition TEXT_FONTS[] = {
     { FONT_SIZE_SMALL, "small" },
     { FONT_SIZE_DEFAULT, "default" },
     { FONT_SIZE_LARGE, "large" },
-#if defined(CONFIG_TT_MOBILE_HOME)
-    { FONT_SIZE_CLOCK, "clock", true },
-#endif
 };
 
 static const IconFontDefinition ICON_FONTS[] = {
@@ -160,6 +156,7 @@ static FontSource getMonoSource(const FontConfiguration& configuration) {
     return getSource(configuration.monoFontPath, asset_fonts_AdwaitaMono_ttf, asset_fonts_AdwaitaMono_ttf_size, TT_MONO_FONT_VERSION);
 }
 
+#if defined(CONFIG_TT_MOBILE_HOME)
 static std::vector<uint32_t> getClockCodepoints() {
     static constexpr char GLYPHS[] = "0123456789:- ";
     std::vector<uint32_t> codepoints;
@@ -168,14 +165,25 @@ static std::vector<uint32_t> getClockCodepoints() {
     }
     return codepoints;
 }
+#endif
 
 static FontRequest getTextRequest(const FontConfiguration& configuration, const FontSource& source, const TextFontDefinition& definition, uint8_t bpp) {
     const uint16_t size = getTextFontSize(configuration.defaultSize, definition.id);
-    const CodepointProvider get_codepoints = definition.clockSubset
-        ? CodepointProvider(getClockCodepoints)
-        : source.getCodepoints;
-    return { getCachedFontFileName(TEXT_CACHE_PREFIX, definition.name, size, bpp, source.version), source.ttf, size, bpp, get_codepoints };
+    return { getCachedFontFileName(TEXT_CACHE_PREFIX, definition.name, size, bpp, source.version), source.ttf, size, bpp, source.getCodepoints };
 }
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+static FontRequest getClockRequest(const FontConfiguration& configuration, const FontSource& source, uint8_t bpp) {
+    const uint16_t size = getClockFontSize(configuration.defaultSize);
+    return {
+        getCachedFontFileName(TEXT_CACHE_PREFIX, "clock", size, bpp, source.version),
+        source.ttf,
+        size,
+        bpp,
+        CodepointProvider(getClockCodepoints)
+    };
+}
+#endif
 
 static FontRequest getMonoRequest(const FontConfiguration& configuration, const FontSource& source, uint8_t bpp) {
     return { getCachedFontFileName(MONO_CACHE_PREFIX, "mono", configuration.defaultSize, bpp, source.version), source.ttf, configuration.defaultSize, bpp, source.getCodepoints };
@@ -315,6 +323,11 @@ bool updateFontCache(const FontConfiguration& configuration) {
             return false;
         }
     }
+#if defined(CONFIG_TT_MOBILE_HOME)
+    if (!ensureCached(getClockRequest(configuration, text_source, bpp))) {
+        return false;
+    }
+#endif
     for (const auto& definition : ICON_FONTS) {
         if (isIconFontGenerated(definition.id) && !ensureCached(getIconRequest(configuration, definition, bpp))) {
             return false;
@@ -355,6 +368,11 @@ void loadFonts(const FontConfiguration& configuration) {
     if (!isTextFontGenerated(FONT_SIZE_LARGE)) {
         lvgl_set_text_font(FONT_SIZE_LARGE, lvgl_get_text_font(FONT_SIZE_DEFAULT), lvgl_get_text_font_height(FONT_SIZE_DEFAULT));
     }
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+    // Keep the clock font of the current size; older sizes are deleted as stale below
+    text_file_names.push_back(getClockRequest(configuration, text_source, bpp).fileName);
+#endif
 
     std::vector<std::string> icon_file_names;
     for (const auto& definition : ICON_FONTS) {
@@ -399,14 +417,47 @@ BinFont* loadMonoFont() {
     return font;
 }
 
-const lv_font_t* getClockFont() {
 #if defined(CONFIG_TT_MOBILE_HOME)
-    const lv_font_t* font = lvgl_get_text_font(FONT_SIZE_CLOCK);
-    if (font != LV_FONT_DEFAULT) {
-        return font;
+ClockFont* loadClockFont() {
+    const auto configuration = getFontConfiguration();
+    const uint8_t bpp = getGeneratedFontBpp();
+    const auto source = getTextSource(configuration);
+    auto request = getClockRequest(configuration, source, bpp);
+    BinFont* bin_font = load(request);
+    if (bin_font == nullptr && source.custom) {
+        LOG_W(TAG, "Falling back to the system clock font");
+        request = getClockRequest(configuration, getSystemSource(asset_fonts_AdwaitaSans_ttf, asset_fonts_AdwaitaSans_ttf_size, TT_TEXT_FONT_VERSION), bpp);
+        bin_font = load(request);
     }
-#endif
-    return lvgl_get_text_font(FONT_SIZE_LARGE);
+    if (bin_font == nullptr) {
+        return nullptr;
+    }
+
+    lv_font_t* lvgl_font = lvgl_binfont_create(bin_font);
+    if (lvgl_font == nullptr) {
+        binfont_close(bin_font);
+        return nullptr;
+    }
+
+    auto* font = tt::newObject<ClockFont>();
+    if (font == nullptr) {
+        lvgl_binfont_destroy(lvgl_font);
+        binfont_close(bin_font);
+        return nullptr;
+    }
+    font->binFont = bin_font;
+    font->lvglFont = lvgl_font;
+    return font;
 }
+
+void destroyClockFont(ClockFont* font) {
+    if (font == nullptr) {
+        return;
+    }
+    lvgl_binfont_destroy(font->lvglFont);
+    binfont_close(font->binFont);
+    tt::deleteObject(font);
+}
+#endif
 
 }

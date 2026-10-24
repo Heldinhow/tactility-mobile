@@ -83,8 +83,12 @@ inline std::vector<HomeItem> resolveHomeItems(
         return items;
     }
 
+    const auto is_pinned = [&pinned](const std::string& id) {
+        return ::std::find(pinned.begin(), pinned.end(), id) != pinned.end();
+    };
     for (const auto& app : apps) {
-        if (!app.hidden && app.compatible && !app.settings) {
+        // A pinned app is shown even when it belongs to the settings category (Wi-Fi is one)
+        if (!app.hidden && app.compatible && (!app.settings || is_pinned(app.id))) {
             add(app, app.favourite);
         }
     }
