@@ -5,10 +5,13 @@
 #include <app/start.h>
 
 #include <cstring>
+#include <ctime>
 #include <new>
 #include <string>
 #include <vector>
 
+#include <lvgl/fonts.h>
+#include <lvgl/icons/shared.h>
 #include <lvgl/lvgl.h>
 #include <lvgl/theme.h>
 
@@ -22,20 +25,37 @@
 #include <Tactility/app/TileGrid.h>
 #include <Tactility/app/launcher/LauncherMode.h>
 #include <Tactility/app/setup/Setup.h>
+#include <Tactility/lvgl/ClockText.h>
 #include <Tactility/lvgl/SystemBars.h>
 #include <Tactility/settings/BootSettings.h>
+#include <Tactility/settings/Time.h>
 #include <Tactility/Tactility.h>
+
+#ifdef ESP_PLATFORM
+#include <sdkconfig.h>
+#endif
 
 namespace tt::app::launcher {
 
 constexpr auto* TAG = "Launcher";
 
+#if defined(CONFIG_TT_MOBILE_HOME)
+#define LAUNCHER_NAME "Home"
+#else
+#define LAUNCHER_NAME "Launcher"
+#endif
+
 namespace {
+
+constexpr auto* MODE_ITEM_ID = "tactility.launcher.mode";
+
+struct Context;
 
 std::vector<TileGridItem> collectItems(void* userData);
 void onAppClicked(const TileGridItem& item, void* userData);
 void onAppLongPressed(const TileGridItem& item, void* userData);
 void onAppKey(const TileGridItem& item, uint32_t key, void* userData);
+void switchMode(Context* ctx);
 
 enum class Mode {
     Apps,
@@ -54,6 +74,13 @@ struct Context {
     Mode mode = Mode::Apps;
     lv_obj_t* modeButtonIcon = nullptr;
     lvgl::SystemBarsListenerId systemBarsListener = 0;
+#if defined(CONFIG_TT_MOBILE_HOME)
+    lv_obj_t* clockLabel = nullptr;
+    lv_obj_t* ampmLabel = nullptr;
+    lv_obj_t* dateLabel = nullptr;
+    lv_timer_t* clockTimer = nullptr;
+    char dateText[32] = {};
+#endif
     TileGrid grid { TileGrid::Callbacks {
         .collect = collectItems,
         .onClicked = onAppClicked,
@@ -66,7 +93,23 @@ struct Context {
 };
 
 std::vector<TileGridItem> collectItems(void* userData) {
-    return getLauncherMode(static_cast<Context*>(userData)->mode).collect();
+    auto* ctx = static_cast<Context*>(userData);
+#if defined(CONFIG_TT_MOBILE_HOME)
+    std::vector<TileGridItem> items = getLauncherMode(ctx->mode).collect();
+    const bool apps_mode = ctx->mode == Mode::Apps;
+    items.insert(
+        items.begin(),
+        TileGridItem {
+            MODE_ITEM_ID,
+            apps_mode ? "Settings" : "Apps",
+            apps_mode ? LVGL_ICON_SHARED_SETTINGS : LVGL_ICON_SHARED_APPS,
+            false
+        }
+    );
+    return items;
+#else
+    return getLauncherMode(ctx->mode).collect();
+#endif
 }
 
 struct StartAppJob {
@@ -84,15 +127,32 @@ void startApp(void* context) {
     delete job;
 }
 
-void onAppClicked(const TileGridItem& item, void*) {
-    auto* job = new (::std::nothrow) StartAppJob { item.id };
+void queueAppStart(const std::string& appId) {
+    auto* job = new (::std::nothrow) StartAppJob { appId };
     if (job == nullptr || file_ops_queue(startApp, job, nullptr) != ERROR_NONE) {
-        LOG_E(TAG, "Failed to queue starting %s", item.id.c_str());
+        LOG_E(TAG, "Failed to queue starting %s", appId.c_str());
         delete job;
     }
 }
 
+void onAppClicked(const TileGridItem& item, void* userData) {
+#if defined(CONFIG_TT_MOBILE_HOME)
+    if (item.id == MODE_ITEM_ID) {
+        switchMode(static_cast<Context*>(userData));
+        return;
+    }
+#else
+    (void)userData;
+#endif
+    queueAppStart(item.id);
+}
+
 void onAppLongPressed(const TileGridItem& item, void* userData) {
+#if defined(CONFIG_TT_MOBILE_HOME)
+    if (item.id == MODE_ITEM_ID) {
+        return;
+    }
+#endif
     auto* ctx = static_cast<Context*>(userData);
     const LauncherMode& mode = getLauncherMode(ctx->mode);
     if (mode.onLongPressed != nullptr) {
@@ -101,6 +161,11 @@ void onAppLongPressed(const TileGridItem& item, void* userData) {
 }
 
 void onAppKey(const TileGridItem& item, uint32_t key, void* userData) {
+#if defined(CONFIG_TT_MOBILE_HOME)
+    if (item.id == MODE_ITEM_ID) {
+        return;
+    }
+#endif
     auto* ctx = static_cast<Context*>(userData);
     const LauncherMode& mode = getLauncherMode(ctx->mode);
     if (mode.onKey != nullptr) {
@@ -115,14 +180,98 @@ void applyIconColor(Context* ctx) {
     }
 }
 
-void onModeButtonPressed(lv_event_t* e) {
-    auto* ctx = static_cast<Context*>(lv_event_get_user_data(e));
+void switchMode(Context* ctx) {
     ctx->mode = getOtherMode(ctx->mode);
     applyIconColor(ctx);
     ctx->grid.showFirstPage();
     ctx->grid.requestRepopulate(false);
+}
+
+#if !defined(CONFIG_TT_MOBILE_HOME)
+void onModeButtonPressed(lv_event_t* e) {
+    auto* ctx = static_cast<Context*>(lv_event_get_user_data(e));
+    switchMode(ctx);
     lv_label_set_text(ctx->modeButtonIcon, getLauncherMode(getOtherMode(ctx->mode)).buttonIcon);
 }
+#endif
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+static void updateHomeClock(Context* ctx) {
+    const time_t now = time(nullptr);
+    const tm* local = localtime(&now);
+    if (local == nullptr) {
+        lv_label_set_text(ctx->clockLabel, "--:--");
+        lv_obj_set_hidden(ctx->ampmLabel, true);
+        return;
+    }
+
+    const auto text = lvgl::formatClock(*local, settings::isTimeFormat24Hour());
+    lv_label_set_text(ctx->clockLabel, text.time);
+    if (text.meridiem != nullptr) {
+        lv_label_set_text(ctx->ampmLabel, text.meridiem);
+        lv_obj_set_hidden(ctx->ampmLabel, false);
+    } else {
+        lv_obj_set_hidden(ctx->ampmLabel, true);
+    }
+    if (strcmp(ctx->dateText, text.date) != 0) {
+        strncpy(ctx->dateText, text.date, sizeof(ctx->dateText) - 1);
+        ctx->dateText[sizeof(ctx->dateText) - 1] = '\0';
+        lv_label_set_text(ctx->dateLabel, ctx->dateText);
+    }
+}
+
+static void onHomeClockTimer(lv_timer_t* timer) {
+    auto* ctx = static_cast<Context*>(lv_timer_get_user_data(timer));
+    updateHomeClock(ctx);
+
+    const time_t now = time(nullptr);
+    const tm* local = localtime(&now);
+    lv_timer_set_period(timer, local != nullptr ? lvgl::millisToNextMinute(*local) : 60000U);
+}
+
+static void createHomeHeader(lv_obj_t* parent, Context* ctx) {
+    auto* header = lv_obj_create(parent);
+    lv_obj_remove_style_all(header);
+    lv_obj_set_size(header, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(header, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(header, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_top(header, 8, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_bottom(header, 4, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_row(header, 2, LV_STATE_DEFAULT);
+    lv_obj_set_scrollable(header, false);
+
+    auto* clock_row = lv_obj_create(header);
+    lv_obj_remove_style_all(clock_row);
+    lv_obj_set_size(clock_row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(clock_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(clock_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
+    lv_obj_set_style_pad_column(clock_row, 4, LV_STATE_DEFAULT);
+    lv_obj_set_scrollable(clock_row, false);
+
+    ctx->clockLabel = lv_label_create(clock_row);
+    lv_obj_set_style_text_font(ctx->clockLabel, lvgl_get_text_font(FONT_SIZE_LARGE), LV_STATE_DEFAULT);
+    lv_label_set_text(ctx->clockLabel, "--:--");
+
+    ctx->ampmLabel = lv_label_create(clock_row);
+    lv_obj_set_style_text_font(ctx->ampmLabel, lvgl_get_text_font(FONT_SIZE_SMALL), LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_bottom(ctx->ampmLabel, 3, LV_STATE_DEFAULT);
+    lv_obj_set_hidden(ctx->ampmLabel, true);
+
+    ctx->dateLabel = lv_label_create(header);
+    lv_obj_set_style_text_font(ctx->dateLabel, lvgl_get_text_font(FONT_SIZE_SMALL), LV_STATE_DEFAULT);
+    lv_obj_set_style_text_opa(ctx->dateLabel, LV_OPA_70, LV_STATE_DEFAULT);
+
+    updateHomeClock(ctx);
+
+    const time_t now = time(nullptr);
+    const tm* local = localtime(&now);
+    ctx->clockTimer = lv_timer_create(
+        onHomeClockTimer,
+        local != nullptr ? lvgl::millisToNextMinute(*local) : 60000U,
+        ctx
+    );
+}
+#endif
 
 void createWidgets(lv_obj_t* parent, void* userData) {
     auto* ctx = static_cast<Context*>(userData);
@@ -130,6 +279,12 @@ void createWidgets(lv_obj_t* parent, void* userData) {
     lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
+#if defined(CONFIG_TT_MOBILE_HOME)
+    createHomeHeader(parent, ctx);
+    applyIconColor(ctx);
+    ctx->grid.setSwipeNavigation(true);
+    ctx->grid.createWidgets(parent);
+#else
     applyIconColor(ctx);
     ctx->grid.setSwipeNavigation(true);
     ctx->grid.createWidgetsWithBottomBar(parent);
@@ -141,12 +296,24 @@ void createWidgets(lv_obj_t* parent, void* userData) {
     ctx->systemBarsListener = lvgl::systemBarsAddListener([ctx] {
         ctx->grid.setBarSideContainer(lvgl::systemBarsGetActionContainer());
     });
+#endif
 }
 
 void destroyWidgets(void* userData) {
     auto* ctx = static_cast<Context*>(userData);
+#if defined(CONFIG_TT_MOBILE_HOME)
+    if (ctx->clockTimer != nullptr) {
+        lv_timer_delete(ctx->clockTimer);
+        ctx->clockTimer = nullptr;
+    }
+    ctx->clockLabel = nullptr;
+    ctx->ampmLabel = nullptr;
+    ctx->dateLabel = nullptr;
+    ctx->dateText[0] = '\0';
+#else
     lvgl::systemBarsRemoveListener(ctx->systemBarsListener);
     ctx->systemBarsListener = 0;
+#endif
     ctx->grid.destroyWidgets();
 }
 
@@ -232,7 +399,7 @@ int32_t appMain(int argc, char* argv[]) {
 
 extern const ::AppManifest manifest = {
     .id = "tactility.launcher",
-    .name = "Launcher",
+    .name = LAUNCHER_NAME,
     .category = APP_CATEGORY_SYSTEM,
     .location = { .type = APP_LOCATION_MEMORY, .location = reinterpret_cast<void*>(appMain) },
     .flags = APP_MANIFEST_FLAG_HIDDEN,
