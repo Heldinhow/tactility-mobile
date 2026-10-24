@@ -23,6 +23,7 @@
 #include <tactility/memory.h>
 
 #include <Tactility/app/TileGrid.h>
+#include <Tactility/app/launcher/HomeModel.h>
 #include <Tactility/app/launcher/LauncherMode.h>
 #include <Tactility/app/setup/Setup.h>
 #include <Tactility/lvgl/ClockText.h>
@@ -47,7 +48,12 @@ constexpr auto* TAG = "Launcher";
 
 namespace {
 
-constexpr auto* MODE_ITEM_ID = "tactility.launcher.mode";
+#if defined(CONFIG_TT_MOBILE_HOME)
+const std::vector<std::string> HOME_PINNED_IDS = {
+    "one.grokbot.carousel",
+    "tactility.wifimanage",
+};
+#endif
 
 struct Context;
 
@@ -95,17 +101,13 @@ struct Context {
 std::vector<TileGridItem> collectItems(void* userData) {
     auto* ctx = static_cast<Context*>(userData);
 #if defined(CONFIG_TT_MOBILE_HOME)
-    std::vector<TileGridItem> items = getLauncherMode(ctx->mode).collect();
-    const bool apps_mode = ctx->mode == Mode::Apps;
-    items.insert(
-        items.begin(),
-        TileGridItem {
-            MODE_ITEM_ID,
-            apps_mode ? "Settings" : "Apps",
-            apps_mode ? LVGL_ICON_SHARED_SETTINGS : LVGL_ICON_SHARED_APPS,
-            false
-        }
-    );
+    const HomeView view = ctx->mode == Mode::Settings ? HomeView::Settings : HomeView::Apps;
+    const std::vector<HomeItem> resolved = resolveHomeItems(view, collectHomeApps(), HOME_PINNED_IDS);
+    std::vector<TileGridItem> items;
+    items.reserve(resolved.size());
+    for (const auto& item : resolved) {
+        items.push_back(TileGridItem { item.id, item.name, item.icon, item.highlighted });
+    }
     return items;
 #else
     return getLauncherMode(ctx->mode).collect();
@@ -137,7 +139,7 @@ void queueAppStart(const std::string& appId) {
 
 void onAppClicked(const TileGridItem& item, void* userData) {
 #if defined(CONFIG_TT_MOBILE_HOME)
-    if (item.id == MODE_ITEM_ID) {
+    if (item.id == HOME_MODE_ITEM_ID) {
         switchMode(static_cast<Context*>(userData));
         return;
     }
@@ -149,7 +151,7 @@ void onAppClicked(const TileGridItem& item, void* userData) {
 
 void onAppLongPressed(const TileGridItem& item, void* userData) {
 #if defined(CONFIG_TT_MOBILE_HOME)
-    if (item.id == MODE_ITEM_ID) {
+    if (item.id == HOME_MODE_ITEM_ID) {
         return;
     }
 #endif
@@ -162,7 +164,7 @@ void onAppLongPressed(const TileGridItem& item, void* userData) {
 
 void onAppKey(const TileGridItem& item, uint32_t key, void* userData) {
 #if defined(CONFIG_TT_MOBILE_HOME)
-    if (item.id == MODE_ITEM_ID) {
+    if (item.id == HOME_MODE_ITEM_ID) {
         return;
     }
 #endif

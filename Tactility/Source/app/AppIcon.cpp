@@ -24,6 +24,7 @@ constexpr IconEntry ICONS[] = {
     {"tactility.launcher",          LVGL_ICON_SHARED_APPS},
     {"tactility.meshchannels",      LVGL_ICON_SHARED_FORUM},
     {"tactility.meshcontacts",      LVGL_ICON_SHARED_FORUM},
+    {"one.grokbot.carousel",        LVGL_ICON_SHARED_FORUM},
     {"tactility.notes",             LVGL_ICON_SHARED_EDIT_NOTE},
     {"tactility.systeminfo",        LVGL_ICON_SHARED_DEVICES},
     {"tactility.terminal",          LVGL_ICON_SHARED_TERMINAL},
