@@ -1,0 +1,9 @@
+# third-party / generated - keep graph small
+Libraries/
+managed_components/
+build/
+build*/
+Modules/lvgl-module/lss/
+Data/
+Translations/
+.idea/

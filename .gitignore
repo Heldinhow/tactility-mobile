@@ -32,3 +32,6 @@ sdkconfig.board.*.dev
 __pycache__
 .DS_Store
 .cache
+
+# Graphify local output
+graphify-out/
