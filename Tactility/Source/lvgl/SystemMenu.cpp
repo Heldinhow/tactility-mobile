@@ -3,6 +3,7 @@
 #include <Tactility/Backlight.h>
 #include <Tactility/TactilityPrivate.h>
 #include <Tactility/lvgl/SystemRecents.h>
+#include <Tactility/service/audio/Audio.h>
 #include <Tactility/settings/DisplaySettings.h>
 #include <Tactility/settings/RadioSettings.h>
 
@@ -39,6 +40,7 @@
 #include <tactility/drivers/wifi.h>
 #include <tactility/log.h>
 
+#include <cmath>
 #include <cstdint>
 #include <ctime>
 
@@ -186,6 +188,11 @@ static void onPanelClosed(void* /*userData*/) {
     dispatchOnMainDispatcher(saveBrightness, reinterpret_cast<void*>(static_cast<uintptr_t>(brightness_state.duty)));
 }
 
+static void onVolumeChanged(lv_event_t* event) {
+    auto* slider_box = lv_event_get_current_target_obj(event);
+    service::audio::setOutputVolume(static_cast<float>(lvgl_sliderbox_get_value(slider_box)));
+}
+
 static void setClockText(lv_obj_t* label) {
     const time_t now = ::time(nullptr);
     const tm* local = localtime(&now);
@@ -309,6 +316,26 @@ static lv_obj_t* createTile(lv_obj_t* parent, const char* icon) {
     return tile;
 }
 
+// A leading icon and a slider box that shows its value, both on the card's background
+static lv_obj_t* createSliderRow(lv_obj_t* parent, const char* icon, int32_t value) {
+    auto* row = lv_obj_create(parent);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(row, 8, LV_STATE_DEFAULT);
+    lv_obj_set_scrollable(row, false);
+
+    auto* icon_label = lv_label_create(row);
+    lv_obj_set_style_text_font(icon_label, lvgl_get_shared_icon_default_font(), LV_STATE_DEFAULT);
+    lv_label_set_text(icon_label, icon);
+
+    auto* slider_box = lvgl_sliderbox_create(row, 0, 100, 10, value);
+    lv_obj_set_width(slider_box, LV_SIZE_CONTENT);
+    lv_obj_set_flex_grow(slider_box, 1);
+    return slider_box;
+}
+
 // A tile that the theme shows as on while it's checked
 static void createOption(lv_obj_t* parent, const ToggleOption* option) {
     const bool enabled = option->isEnabled();
@@ -396,11 +423,17 @@ static void createWidgets(lv_obj_t* parent, void* /*userData*/) {
         if (tt::backlight::isDimmable(backlight_device)) {
             uint8_t brightness = 0;
             backlight_get_brightness(backlight_device, &brightness);
-            auto* brightness_slider = lvgl_sliderbox_create(card, 0, 100, 10, tt::backlight::toPercent(backlight_device, brightness));
-            lv_obj_set_width(brightness_slider, LV_PCT(100));
+            auto* brightness_slider = createSliderRow(card, LVGL_ICON_SHARED_LIGHTBULB, tt::backlight::toPercent(backlight_device, brightness));
             lvgl_sliderbox_add_value_changed_cb(brightness_slider, onBrightnessChanged, nullptr);
         }
         device_put(backlight_device);
+    }
+
+    // Volume, when the device has audio output hardware. The audio service persists the level.
+    if (service::audio::isOutputAvailable()) {
+        const auto volume = static_cast<int32_t>(std::lround(service::audio::getOutputVolume()));
+        auto* volume_slider = createSliderRow(card, LVGL_ICON_SHARED_MUSIC_NOTE, volume);
+        lvgl_sliderbox_add_value_changed_cb(volume_slider, onVolumeChanged, nullptr);
     }
 
     // A keyboard or encoder can't tap outside of the panel or swipe up, so it needs a button to close it
