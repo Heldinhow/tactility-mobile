@@ -67,7 +67,13 @@ constexpr TimeoutOption TIMEOUT_OPTIONS[] = {
 constexpr int32_t ORIENTATION_ICON_ROTATIONS[] = { 2700, 0, 900, 1800 };
 
 // In settings::display::ScreensaverType order
-constexpr const char* SCREENSAVER_NAMES[] = { "None", "Bouncing Balls", "Mystify", "Matrix Rain", "StackChan" };
+constexpr const char* SCREENSAVER_NAMES[] = { "None", "Bouncing Balls", "Mystify", "Matrix Rain", "StackChan", "Lock Screen" };
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+constexpr size_t SCREENSAVER_COUNT = std::size(SCREENSAVER_NAMES);
+#else
+constexpr size_t SCREENSAVER_COUNT = static_cast<size_t>(settings::display::ScreensaverType::Lock);
+#endif
 
 struct Context {
     uint32_t appInstanceId;
@@ -220,7 +226,7 @@ const char* getTimeoutName(uint32_t ms) {
 
 const char* getScreensaverName(settings::display::ScreensaverType type) {
     const auto index = static_cast<size_t>(type);
-    return index < std::size(SCREENSAVER_NAMES) ? SCREENSAVER_NAMES[index] : "";
+    return index < SCREENSAVER_COUNT ? SCREENSAVER_NAMES[index] : "";
 }
 
 /** Requires the LVGL lock */
@@ -256,7 +262,7 @@ void startScreensaverSelection(Context* ctx) {
     if (ctx->screensaverDialogId != 0) {
         return;
     }
-    const std::vector<std::string> items(std::begin(SCREENSAVER_NAMES), std::end(SCREENSAVER_NAMES));
+    const std::vector<std::string> items(SCREENSAVER_NAMES, SCREENSAVER_NAMES + SCREENSAVER_COUNT);
     ctx->screensaverDialogId = selectiondialog::start(ctx->appInstanceId, "Screensaver", items);
 }
 
@@ -271,7 +277,7 @@ void onTimeoutSelectionResult(Context* ctx, int32_t selected) {
 
 void onScreensaverSelectionResult(Context* ctx, int32_t selected) {
     ctx->screensaverDialogId = 0;
-    if (selected >= 0 && selected < static_cast<int32_t>(settings::display::ScreensaverType::Count)) {
+    if (selected >= 0 && selected < static_cast<int32_t>(SCREENSAVER_COUNT)) {
         ctx->displaySettings.screensaverType = static_cast<settings::display::ScreensaverType>(selected);
         ctx->displaySettingsUpdated = true;
     }

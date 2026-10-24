@@ -19,6 +19,11 @@
 #include <tactility/drivers/backlight.h>
 
 #include <lvgl/lvgl.h>
+#include <lvgl_window_manager/window_manager.h>
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+#include <Tactility/service/displayidle/LockScreen.h>
+#endif
 
 namespace tt::service::displayidle {
 
@@ -147,6 +152,79 @@ void DisplayIdleService::updateScreensaver() {
     }
 }
 
+#if defined(CONFIG_TT_MOBILE_HOME)
+void DisplayIdleService::handleLockTick(uint32_t inactive_ms) {
+    if (!hasDisplayWithBacklight()) {
+        return;
+    }
+
+    const bool timeout_enabled = cachedDisplaySettings.backlightTimeoutEnabled && cachedDisplaySettings.backlightTimeoutMs > 0;
+    LockEvent event = LockEvent::Timeout;
+    if (!timeout_enabled) {
+        if (lockState == LockState::Unlocked) {
+            return;
+        }
+        event = LockEvent::Unlock;
+    } else if (lockState == LockState::Unlocked && inactive_ms >= cachedDisplaySettings.backlightTimeoutMs) {
+        event = LockEvent::Timeout;
+    } else if (lockState == LockState::LockedOff && inactive_ms < kWakeActivityThresholdMs) {
+        event = LockEvent::Activity;
+    } else if (lockState == LockState::LockedOn && inactive_ms >= cachedDisplaySettings.backlightTimeoutMs) {
+        event = LockEvent::Timeout;
+    } else {
+        return;
+    }
+
+    LockEffects effects;
+    lockState = nextLockState(lockState, event, effects);
+
+    if (effects.hideOverlay) {
+        window_manager_overlay_hide();
+    }
+    if (effects.hideLock) {
+        lockScreenHide();
+    }
+    if (effects.showLock && !lockScreenShow()) {
+        // Fail open: never leave the panel on without a visible way to unlock
+        lockState = LockState::Unlocked;
+        effects.backlightOn = true;
+        effects.backlightOff = false;
+    }
+    if (effects.backlightOn) {
+        setBacklightBrightness(cachedDisplaySettings.backlightDuty);
+    } else if (effects.backlightOff) {
+        setBacklightBrightness(0);
+    }
+    if (effects.resetActivity) {
+        lv_display_trigger_activity(nullptr);
+    }
+    displayDimmed = effects.backlightOff;
+}
+
+void DisplayIdleService::unlock() {
+    if (lockState != LockState::LockedOn) {
+        return;
+    }
+
+    LockEffects effects;
+    lockState = nextLockState(lockState, LockEvent::Unlock, effects);
+    if (effects.hideLock) {
+        lockScreenHide();
+    }
+    if (effects.backlightOn) {
+        setBacklightBrightness(cachedDisplaySettings.backlightDuty);
+    }
+    if (effects.resetActivity) {
+        lv_display_trigger_activity(nullptr);
+    }
+    displayDimmed = false;
+}
+
+void DisplayIdleService::onLockUnlockRequested(void* context) {
+    static_cast<DisplayIdleService*>(context)->unlock();
+}
+#endif
+
 void DisplayIdleService::tick() {
     if (!lvgl_try_lock(100)) {
         return;
@@ -164,6 +242,14 @@ void DisplayIdleService::tick() {
     uint32_t inactive_ms = 0;
 
     inactive_ms = lv_display_get_inactive_time(nullptr);
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+    if (cachedDisplaySettings.screensaverType == settings::display::ScreensaverType::Lock) {
+        handleLockTick(inactive_ms);
+        lvgl_unlock();
+        return;
+    }
+#endif
 
     // Only update if not stopping (prevents lag on touch)
     if (displayDimmed && screensaverOverlay && !stopScreensaverRequested.load(std::memory_order_acquire)) {
@@ -226,6 +312,12 @@ bool DisplayIdleService::onStart(ServiceContext& service) {
     timer = std::make_unique<Timer>(Timer::Type::Periodic, millis_to_ticks(TICK_INTERVAL_MS), [this]{ this->tick(); });
     timer->setCallbackPriority(Thread::Priority::Lower);
     timer->start();
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+    lockState = LockState::Unlocked;
+    lockScreenSetUnlockCallback(&DisplayIdleService::onLockUnlockRequested, this);
+#endif
+
     return true;
 }
 
@@ -234,6 +326,12 @@ void DisplayIdleService::onStop(ServiceContext& service) {
         timer->stop();
         timer = nullptr;
     }
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+    lockScreenSetUnlockCallback(nullptr, nullptr);
+    lockScreenHide();
+    lockState = LockState::Unlocked;
+#endif
     if (screensaverOverlay) {
         // Retry screensaver cleanup during shutdown
         constexpr int maxRetries = 5;

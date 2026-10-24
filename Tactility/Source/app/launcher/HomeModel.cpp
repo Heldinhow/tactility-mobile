@@ -1,3 +1,9 @@
+#ifdef ESP_PLATFORM
+#include <sdkconfig.h>
+#endif
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+
 #include <Tactility/app/AppIcon.h>
 #include <Tactility/app/launcher/Favourites.h>
 #include <Tactility/app/launcher/HomeModel.h>
@@ -61,3 +67,5 @@ std::vector<HomeApp> collectHomeApps() {
 }
 
 }
+
+#endif

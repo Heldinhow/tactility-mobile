@@ -11,6 +11,10 @@
 #include <Tactility/lvgl/SystemRecents.h>
 #include <Tactility/lvgl/SystemWindow.h>
 
+#if defined(CONFIG_TT_MOBILE_HOME)
+#include <Tactility/service/displayidle/LockScreen.h>
+#endif
+
 #include <app/event.h>
 #include <app/manager.h>
 #include <app/manifest.h>
@@ -23,6 +27,11 @@
 #include <cstring>
 
 namespace tt::lvgl {
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+using service::displayidle::lockScreenIsVisible;
+using service::displayidle::lockScreenRequestUnlock;
+#endif
 
 namespace {
 
@@ -41,6 +50,7 @@ struct GestureState {
     lv_point_t press = { 0, 0 };
     uint32_t press_tick = 0;
     bool hold_triggered = false;
+    bool press_started_locked = false;
     lv_timer_t* hold_timer = nullptr;
 };
 
@@ -98,6 +108,7 @@ void clearPress() {
     state.indev = nullptr;
     state.edge = SystemGestureEdge::None;
     state.hold_triggered = false;
+    state.press_started_locked = false;
 }
 
 bool isPressStillDown() {
@@ -153,6 +164,21 @@ void onIndevPressed(lv_event_t* event) {
 
     lv_point_t point;
     lv_indev_get_point(indev, &point);
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+    // The lock takes any press, not just one from an edge: a swipe up anywhere unlocks it
+    if (lockScreenIsVisible()) {
+        state.indev = indev;
+        state.edge = SystemGestureEdge::None;
+        state.press = point;
+        state.press_tick = lv_tick_get();
+        state.hold_triggered = false;
+        state.press_started_locked = true;
+        return;
+    }
+#endif
+    state.press_started_locked = false;
+
     const SystemGestureEdge edge = systemGestureEdgeAt(
         point.x,
         point.y,
@@ -187,6 +213,9 @@ void onIndevReleased(lv_event_t* event) {
     const SystemGestureEdge edge = state.edge;
     const lv_point_t press = state.press;
     const bool hold_triggered = state.hold_triggered;
+#if defined(CONFIG_TT_MOBILE_HOME)
+    const bool press_started_locked = state.press_started_locked;
+#endif
     clearPress();
 
     if (hold_triggered) {
@@ -195,6 +224,16 @@ void onIndevReleased(lv_event_t* event) {
 
     lv_point_t point;
     lv_indev_get_point(indev, &point);
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+    if (lockScreenIsVisible()) {
+        if (press_started_locked && systemGestureIsSwipeUp(press.x, press.y, point.x, point.y)) {
+            lv_indev_reset(indev, nullptr);
+            lockScreenRequestUnlock();
+        }
+        return;
+    }
+#endif
 
     if (edge == SystemGestureEdge::Bottom) {
         if (systemGestureIsSwipeUp(press.x, press.y, point.x, point.y)) {

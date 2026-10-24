@@ -5,6 +5,10 @@
 #include <Tactility/settings/DisplaySettings.h>
 #include <Tactility/Timer.h>
 
+#if defined(CONFIG_TT_MOBILE_HOME)
+#include <Tactility/service/displayidle/LockState.h>
+#endif
+
 #include <sdkconfig.h>
 
 #include <atomic>
@@ -53,6 +57,13 @@ class DisplayIdleService final : public Service {
     void updateScreensaver();
 
     void tick();
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+    LockState lockState = LockState::Unlocked;
+    void handleLockTick(uint32_t inactiveMs);
+    void unlock();
+    static void onLockUnlockRequested(void* context);
+#endif
 
 public:
     bool onStart(ServiceContext& service) override;
