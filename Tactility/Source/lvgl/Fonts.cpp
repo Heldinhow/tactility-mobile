@@ -5,6 +5,10 @@
 #include <Tactility/lvgl/FontVersions.h>
 #include <Tactility/settings/AppearanceSettings.h>
 
+#ifdef ESP_PLATFORM
+#include <sdkconfig.h>
+#endif
+
 #include <generated_assets.h>
 
 #include <binfont/binfont.h>
@@ -53,6 +57,8 @@ struct FontRequest {
 struct TextFontDefinition {
     LvglFontSize id;
     const char* name;
+    /** Only rasterize the clock glyphs, regardless of the source font */
+    bool clockSubset = false;
 };
 
 struct IconFontDefinition {
@@ -66,6 +72,9 @@ constexpr TextFontDefinition TEXT_FONTS[] = {
     { FONT_SIZE_SMALL, "small" },
     { FONT_SIZE_DEFAULT, "default" },
     { FONT_SIZE_LARGE, "large" },
+#if defined(CONFIG_TT_MOBILE_HOME)
+    { FONT_SIZE_CLOCK, "clock", true },
+#endif
 };
 
 static const IconFontDefinition ICON_FONTS[] = {
@@ -151,9 +160,21 @@ static FontSource getMonoSource(const FontConfiguration& configuration) {
     return getSource(configuration.monoFontPath, asset_fonts_AdwaitaMono_ttf, asset_fonts_AdwaitaMono_ttf_size, TT_MONO_FONT_VERSION);
 }
 
+static std::vector<uint32_t> getClockCodepoints() {
+    static constexpr char GLYPHS[] = "0123456789:- ";
+    std::vector<uint32_t> codepoints;
+    for (const char* glyph = GLYPHS; *glyph != '\0'; glyph++) {
+        codepoints.push_back(static_cast<uint32_t>(static_cast<unsigned char>(*glyph)));
+    }
+    return codepoints;
+}
+
 static FontRequest getTextRequest(const FontConfiguration& configuration, const FontSource& source, const TextFontDefinition& definition, uint8_t bpp) {
     const uint16_t size = getTextFontSize(configuration.defaultSize, definition.id);
-    return { getCachedFontFileName(TEXT_CACHE_PREFIX, definition.name, size, bpp, source.version), source.ttf, size, bpp, source.getCodepoints };
+    const CodepointProvider get_codepoints = definition.clockSubset
+        ? CodepointProvider(getClockCodepoints)
+        : source.getCodepoints;
+    return { getCachedFontFileName(TEXT_CACHE_PREFIX, definition.name, size, bpp, source.version), source.ttf, size, bpp, get_codepoints };
 }
 
 static FontRequest getMonoRequest(const FontConfiguration& configuration, const FontSource& source, uint8_t bpp) {
@@ -376,6 +397,16 @@ BinFont* loadMonoFont() {
         font = load(getMonoRequest(configuration, getSystemSource(asset_fonts_AdwaitaMono_ttf, asset_fonts_AdwaitaMono_ttf_size, TT_MONO_FONT_VERSION), bpp));
     }
     return font;
+}
+
+const lv_font_t* getClockFont() {
+#if defined(CONFIG_TT_MOBILE_HOME)
+    const lv_font_t* font = lvgl_get_text_font(FONT_SIZE_CLOCK);
+    if (font != LV_FONT_DEFAULT) {
+        return font;
+    }
+#endif
+    return lvgl_get_text_font(FONT_SIZE_LARGE);
 }
 
 }

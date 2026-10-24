@@ -1,5 +1,7 @@
 #pragma once
 
+#include <lvgl.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -60,5 +62,8 @@ void loadFonts(const FontConfiguration& configuration);
  * @return the font, to be released with binfont_close(), or nullptr when it couldn't be loaded
  */
 BinFont* loadMonoFont();
+
+/** @return the digits-only clock font, or the large text font when it isn't available */
+const lv_font_t* getClockFont();
 
 }

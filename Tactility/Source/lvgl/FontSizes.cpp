@@ -12,6 +12,7 @@ uint16_t getTextFontSize(uint16_t defaultSize, LvglFontSize fontSize) {
     switch (fontSize) {
         case FONT_SIZE_SMALL: return scale(defaultSize, 0.75f);
         case FONT_SIZE_LARGE: return scale(defaultSize, 1.25f);
+        case FONT_SIZE_CLOCK: return scale(defaultSize, 2.5f);
         case FONT_SIZE_DEFAULT:
         default: return defaultSize;
     }

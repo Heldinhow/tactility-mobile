@@ -5,6 +5,7 @@
 #if defined(CONFIG_TT_MOBILE_HOME)
 
 #include <Tactility/lvgl/ClockText.h>
+#include <Tactility/lvgl/Fonts.h>
 #include <Tactility/service/displayidle/LockScreen.h>
 #include <Tactility/settings/Time.h>
 
@@ -128,7 +129,7 @@ bool lockScreenShow() {
     lv_obj_align(clock_row, LV_ALIGN_CENTER, 0, -20);
 
     lock.clock = lv_label_create(clock_row);
-    lv_obj_set_style_text_font(lock.clock, lvgl_get_text_font(FONT_SIZE_LARGE), LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(lock.clock, lvgl::getClockFont(), LV_STATE_DEFAULT);
     lv_label_set_text(lock.clock, "--:--");
 
     lock.ampm = lv_label_create(clock_row);

@@ -7,7 +7,7 @@ struct RegisteredFont {
     uint32_t height;
 };
 
-static struct RegisteredFont text_fonts[FONT_SIZE_LARGE + 1];
+static struct RegisteredFont text_fonts[FONT_SIZE_CLOCK + 1];
 static struct RegisteredFont icon_fonts[LVGL_ICON_FONT_SHARED_LARGE + 1];
 
 void lvgl_set_text_font(enum LvglFontSize font_size, const lv_font_t* font, uint32_t height) {

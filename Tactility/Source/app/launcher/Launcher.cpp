@@ -30,6 +30,7 @@
 #include <Tactility/app/launcher/LauncherMode.h>
 #include <Tactility/app/setup/Setup.h>
 #include <Tactility/lvgl/ClockText.h>
+#include <Tactility/lvgl/Fonts.h>
 #include <Tactility/lvgl/SystemBars.h>
 #include <Tactility/settings/BootSettings.h>
 #include <Tactility/settings/Time.h>
@@ -264,7 +265,7 @@ static void createHomeHeader(lv_obj_t* parent, Context* ctx) {
     lv_obj_set_scrollable(clock_row, false);
 
     ctx->clockLabel = lv_label_create(clock_row);
-    lv_obj_set_style_text_font(ctx->clockLabel, lvgl_get_text_font(FONT_SIZE_LARGE), LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ctx->clockLabel, lvgl::getClockFont(), LV_STATE_DEFAULT);
     lv_label_set_text(ctx->clockLabel, "--:--");
 
     ctx->ampmLabel = lv_label_create(clock_row);
