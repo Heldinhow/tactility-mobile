@@ -105,6 +105,43 @@ inline std::vector<HomeItem> resolveHomeItems(
     return items;
 }
 
+/** One always-visible shortcut in the dock. The settings slot is a mode switch, not an app. */
+struct DockItem {
+    const char* id;
+    const char* name;
+    const char* icon;
+    bool settings;
+};
+
+/**
+ * @return the dock slots that the device can show, in their fixed order. Wi-Fi, Files and the
+ * Grok Bot carousel are omitted when they are not installed or compatible; Settings is always
+ * present. No empty slots are returned.
+ */
+inline std::vector<DockItem> resolveDockItems(const std::vector<HomeApp>& apps) {
+    static constexpr DockItem SLOTS[] = {
+        { "tactility.wifimanage", "Wi-Fi", LVGL_ICON_SHARED_WIFI, false },
+        { HOME_MODE_ITEM_ID, "Settings", LVGL_ICON_SHARED_SETTINGS, true },
+        { "tactility.files", "Files", LVGL_ICON_SHARED_FOLDER, false },
+        { "one.grokbot.carousel", "Grok Bot", LVGL_ICON_SHARED_FORUM, false },
+    };
+
+    std::vector<DockItem> items;
+    for (const auto& slot : SLOTS) {
+        if (slot.settings) {
+            items.push_back(slot);
+            continue;
+        }
+        for (const auto& app : apps) {
+            if (!app.hidden && app.compatible && app.id == slot.id) {
+                items.push_back(slot);
+                break;
+            }
+        }
+    }
+    return items;
+}
+
 /** Reads the installed apps and their compatibility for the Home. */
 std::vector<HomeApp> collectHomeApps();
 

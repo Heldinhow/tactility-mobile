@@ -127,3 +127,47 @@ TEST_CASE("a repeated app id appears once") {
     CHECK_EQ(items.size(), 2);
     CHECK_EQ(items[1].name, "Notes");
 }
+
+TEST_CASE("the dock keeps its order and always offers Settings") {
+    const std::vector<HomeApp> apps = {
+        app("tactility.files", "Files"),
+        app("tactility.wifimanage", "Wi-Fi"),
+        app("one.grokbot.carousel", "Grok Bot"),
+    };
+    const auto dock = resolveDockItems(apps);
+
+    REQUIRE(dock.size() == 4);
+    CHECK_EQ(std::string(dock[0].id), "tactility.wifimanage");
+    CHECK_EQ(std::string(dock[1].id), HOME_MODE_ITEM_ID);
+    CHECK(dock[1].settings);
+    CHECK_EQ(std::string(dock[2].id), "tactility.files");
+    CHECK_EQ(std::string(dock[3].id), "one.grokbot.carousel");
+}
+
+TEST_CASE("the dock collapses missing or incompatible apps without gaps") {
+    const std::vector<HomeApp> missing_carousel = {
+        app("tactility.files", "Files"),
+        app("tactility.wifimanage", "Wi-Fi"),
+    };
+    const auto three = resolveDockItems(missing_carousel);
+    REQUIRE(three.size() == 3);
+    CHECK_EQ(std::string(three[0].id), "tactility.wifimanage");
+    CHECK_EQ(std::string(three[1].id), HOME_MODE_ITEM_ID);
+    CHECK_EQ(std::string(three[2].id), "tactility.files");
+
+    const std::vector<HomeApp> missing_wifi = {
+        app("tactility.files", "Files"),
+        app("one.grokbot.carousel", "Grok Bot", false, false, false, false),
+    };
+    const auto two = resolveDockItems(missing_wifi);
+    REQUIRE(two.size() == 2);
+    CHECK_EQ(std::string(two[0].id), HOME_MODE_ITEM_ID);
+    CHECK_EQ(std::string(two[1].id), "tactility.files");
+}
+
+TEST_CASE("the dock works with no apps at all") {
+    const auto dock = resolveDockItems({});
+    REQUIRE(dock.size() == 1);
+    CHECK_EQ(std::string(dock[0].id), HOME_MODE_ITEM_ID);
+    CHECK(dock[0].settings);
+}

@@ -4,6 +4,7 @@
 #include <app/scheduler.h>
 #include <app/start.h>
 
+#include <cstddef>
 #include <cstring>
 #include <ctime>
 #include <new>
@@ -14,6 +15,8 @@
 #include <lvgl/icons/shared.h>
 #include <lvgl/lvgl.h>
 #include <lvgl/theme.h>
+#include <lvgl/widgets/card.h>
+#include <lvgl/widgets/icon_button.h>
 
 #include <lvgl_window_manager/window_manager.h>
 
@@ -57,6 +60,14 @@ const std::vector<std::string> HOME_PINNED_IDS = {
 
 struct Context;
 
+#if defined(CONFIG_TT_MOBILE_HOME)
+struct DockEntry {
+    const char* id;
+    bool settings;
+    Context* context;
+};
+#endif
+
 std::vector<TileGridItem> collectItems(void* userData);
 void onAppClicked(const TileGridItem& item, void* userData);
 void onAppLongPressed(const TileGridItem& item, void* userData);
@@ -86,6 +97,8 @@ struct Context {
     lv_obj_t* dateLabel = nullptr;
     lv_timer_t* clockTimer = nullptr;
     char dateText[32] = {};
+    DockEntry dockEntries[4] = {};
+    size_t dockEntryCount = 0;
 #endif
     TileGrid grid { TileGrid::Callbacks {
         .collect = collectItems,
@@ -273,6 +286,46 @@ static void createHomeHeader(lv_obj_t* parent, Context* ctx) {
         ctx
     );
 }
+
+static void onDockClicked(lv_event_t* event) {
+    auto* entry = static_cast<DockEntry*>(lv_event_get_user_data(event));
+    if (entry->settings) {
+        switchMode(entry->context);
+    } else {
+        queueAppStart(entry->id);
+    }
+}
+
+static void createDock(lv_obj_t* parent, Context* ctx) {
+    auto* dock = lvgl_card_create(parent);
+    lv_obj_set_size(dock, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(dock, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(dock, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_all(dock, 4, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_column(dock, 8, LV_STATE_DEFAULT);
+    lv_obj_set_scrollable(dock, false);
+
+    ctx->dockEntryCount = 0;
+    const auto items = resolveDockItems(collectHomeApps());
+    const auto icon_height = static_cast<int32_t>(lvgl_get_shared_icon_default_font_height());
+    for (const auto& item : items) {
+        if (ctx->dockEntryCount >= 4) {
+            break;
+        }
+        auto& entry = ctx->dockEntries[ctx->dockEntryCount++];
+        entry.id = item.id;
+        entry.settings = item.settings;
+        entry.context = ctx;
+
+        auto* button = lvgl_icon_button_create(dock);
+        lv_obj_set_size(button, icon_height * 2, icon_height * 2);
+        auto* icon = lv_label_create(button);
+        lv_obj_set_style_text_font(icon, lvgl_get_shared_icon_default_font(), LV_STATE_DEFAULT);
+        lv_label_set_text(icon, item.icon);
+        lv_obj_center(icon);
+        lv_obj_add_event_cb(button, onDockClicked, LV_EVENT_SHORT_CLICKED, &entry);
+    }
+}
 #endif
 
 void createWidgets(lv_obj_t* parent, void* userData) {
@@ -286,6 +339,7 @@ void createWidgets(lv_obj_t* parent, void* userData) {
     applyIconColor(ctx);
     ctx->grid.setSwipeNavigation(true);
     ctx->grid.createWidgets(parent);
+    createDock(parent, ctx);
 #else
     applyIconColor(ctx);
     ctx->grid.setSwipeNavigation(true);
@@ -312,6 +366,7 @@ void destroyWidgets(void* userData) {
     ctx->ampmLabel = nullptr;
     ctx->dateLabel = nullptr;
     ctx->dateText[0] = '\0';
+    ctx->dockEntryCount = 0;
 #else
     lvgl::systemBarsRemoveListener(ctx->systemBarsListener);
     ctx->systemBarsListener = 0;
