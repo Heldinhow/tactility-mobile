@@ -50,7 +50,6 @@ struct GestureState {
     lv_point_t press = { 0, 0 };
     uint32_t press_tick = 0;
     bool hold_triggered = false;
-    bool press_started_locked = false;
     lv_timer_t* hold_timer = nullptr;
 };
 
@@ -108,7 +107,6 @@ void clearPress() {
     state.indev = nullptr;
     state.edge = SystemGestureEdge::None;
     state.hold_triggered = false;
-    state.press_started_locked = false;
 }
 
 bool isPressStillDown() {
@@ -122,6 +120,13 @@ void onHoldTimer(lv_timer_t* timer) {
         clearPress();
         return;
     }
+#if defined(CONFIG_TT_MOBILE_HOME)
+    if (lockScreenIsVisible()) {
+        // The press woke the display; it must not hold its way into the recents switcher
+        clearPress();
+        return;
+    }
+#endif
     if (lv_tick_elaps(state.press_tick) < HOLD_TIME_MS) {
         return;
     }
@@ -173,11 +178,9 @@ void onIndevPressed(lv_event_t* event) {
         state.press = point;
         state.press_tick = lv_tick_get();
         state.hold_triggered = false;
-        state.press_started_locked = true;
         return;
     }
 #endif
-    state.press_started_locked = false;
 
     const SystemGestureEdge edge = systemGestureEdgeAt(
         point.x,
@@ -214,7 +217,8 @@ void onIndevReleased(lv_event_t* event) {
     const lv_point_t press = state.press;
     const bool hold_triggered = state.hold_triggered;
 #if defined(CONFIG_TT_MOBILE_HOME)
-    const bool press_started_locked = state.press_started_locked;
+    // A locked press is the only one that sets an indev with no edge
+    const bool press_started_locked = state.indev != nullptr && state.edge == SystemGestureEdge::None;
 #endif
     clearPress();
 

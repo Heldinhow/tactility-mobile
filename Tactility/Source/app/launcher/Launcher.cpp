@@ -53,10 +53,18 @@ constexpr auto* TAG = "Launcher";
 namespace {
 
 #if defined(CONFIG_TT_MOBILE_HOME)
-const std::vector<std::string> HOME_PINNED_IDS = {
+constexpr const char* HOME_PINNED_IDS[] = {
     "one.grokbot.carousel",
     "tactility.wifimanage",
 };
+
+std::vector<std::string> getPinnedIds() {
+    std::vector<std::string> ids;
+    for (const char* id : HOME_PINNED_IDS) {
+        ids.emplace_back(id);
+    }
+    return ids;
+}
 #endif
 
 struct Context;
@@ -116,7 +124,7 @@ std::vector<TileGridItem> collectItems(void* userData) {
     auto* ctx = static_cast<Context*>(userData);
 #if defined(CONFIG_TT_MOBILE_HOME)
     const HomeView view = ctx->mode == Mode::Settings ? HomeView::Settings : HomeView::Apps;
-    const std::vector<HomeItem> resolved = resolveHomeItems(view, collectHomeApps(), HOME_PINNED_IDS);
+    const std::vector<HomeItem> resolved = resolveHomeItems(view, collectHomeApps(), getPinnedIds());
     std::vector<TileGridItem> items;
     items.reserve(resolved.size());
     for (const auto& item : resolved) {

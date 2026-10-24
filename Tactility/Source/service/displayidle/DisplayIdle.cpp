@@ -328,8 +328,11 @@ void DisplayIdleService::onStop(ServiceContext& service) {
     }
 
 #if defined(CONFIG_TT_MOBILE_HOME)
+    if (lvgl_try_lock(100)) {
+        lockScreenHide();
+        lvgl_unlock();
+    }
     lockScreenSetUnlockCallback(nullptr, nullptr);
-    lockScreenHide();
     lockState = LockState::Unlocked;
 #endif
     if (screensaverOverlay) {

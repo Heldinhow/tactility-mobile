@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #ifdef ESP_PLATFORM
 #include <sdkconfig.h>
 #endif
@@ -16,6 +18,7 @@
 
 #include <cstring>
 #include <ctime>
+#include <new>
 
 namespace tt::service::displayidle {
 
@@ -30,33 +33,33 @@ struct LockWidgets {
     lv_group_t* group = nullptr;
     lv_group_t* previous_group = nullptr;
     char date_text[32] = {};
+    LockUnlockCallback callback = nullptr;
+    void* context = nullptr;
 };
 
-LockWidgets lock;
-LockUnlockCallback unlock_callback = nullptr;
-void* unlock_context = nullptr;
+LockWidgets* lock = nullptr;
 
 void updateClock() {
     const time_t now = time(nullptr);
     const tm* local = localtime(&now);
     if (local == nullptr) {
-        lv_label_set_text(lock.clock, "--:--");
-        lv_obj_set_hidden(lock.ampm, true);
+        lv_label_set_text(lock->clock, "--:--");
+        lv_obj_set_hidden(lock->ampm, true);
         return;
     }
 
     const auto text = lvgl::formatClock(*local, settings::isTimeFormat24Hour());
-    lv_label_set_text(lock.clock, text.time);
+    lv_label_set_text(lock->clock, text.time);
     if (text.meridiem != nullptr) {
-        lv_label_set_text(lock.ampm, text.meridiem);
-        lv_obj_set_hidden(lock.ampm, false);
+        lv_label_set_text(lock->ampm, text.meridiem);
+        lv_obj_set_hidden(lock->ampm, false);
     } else {
-        lv_obj_set_hidden(lock.ampm, true);
+        lv_obj_set_hidden(lock->ampm, true);
     }
-    if (strcmp(lock.date_text, text.date) != 0) {
-        strncpy(lock.date_text, text.date, sizeof(lock.date_text) - 1);
-        lock.date_text[sizeof(lock.date_text) - 1] = '\0';
-        lv_label_set_text(lock.date, lock.date_text);
+    if (strcmp(lock->date_text, text.date) != 0) {
+        strncpy(lock->date_text, text.date, sizeof(lock->date_text) - 1);
+        lock->date_text[sizeof(lock->date_text) - 1] = '\0';
+        lv_label_set_text(lock->date, lock->date_text);
     }
 }
 
@@ -85,22 +88,46 @@ void consumePressedPointers() {
 }
 
 void lockScreenSetUnlockCallback(LockUnlockCallback callback, void* context) {
-    unlock_callback = callback;
-    unlock_context = context;
+    if (callback == nullptr && context == nullptr) {
+        if (lock != nullptr) {
+            lock->callback = nullptr;
+            lock->context = nullptr;
+            // The owner hides the widgets under the LVGL lock before clearing the callback
+            if (lock->root == nullptr) {
+                delete lock;
+                lock = nullptr;
+            }
+        }
+        return;
+    }
+
+    if (lock == nullptr) {
+        lock = new (::std::nothrow) LockWidgets();
+    }
+    if (lock != nullptr) {
+        lock->callback = callback;
+        lock->context = context;
+    }
 }
 
 void lockScreenRequestUnlock() {
-    if (unlock_callback != nullptr) {
-        unlock_callback(unlock_context);
+    if (lock != nullptr && lock->callback != nullptr) {
+        lock->callback(lock->context);
     }
 }
 
 bool lockScreenIsVisible() {
-    return lock.root != nullptr;
+    return lock != nullptr && lock->root != nullptr;
 }
 
 bool lockScreenShow() {
-    if (lock.root != nullptr) {
+    if (lock == nullptr) {
+        lock = new (::std::nothrow) LockWidgets();
+        if (lock == nullptr) {
+            return false;
+        }
+    }
+    if (lock->root != nullptr) {
         return true;
     }
 
@@ -108,7 +135,7 @@ bool lockScreenShow() {
     if (root == nullptr) {
         return false;
     }
-    lock.root = root;
+    lock->root = root;
     lv_obj_set_size(root, LV_PCT(100), LV_PCT(100));
     lv_obj_set_style_bg_color(root, lv_obj_get_style_bg_color(lv_screen_active(), LV_PART_MAIN), LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(root, LV_OPA_COVER, LV_STATE_DEFAULT);
@@ -128,20 +155,20 @@ bool lockScreenShow() {
     lv_obj_set_scrollable(clock_row, false);
     lv_obj_align(clock_row, LV_ALIGN_CENTER, 0, -20);
 
-    lock.clock = lv_label_create(clock_row);
-    lv_obj_set_style_text_font(lock.clock, lvgl::getClockFont(), LV_STATE_DEFAULT);
-    lv_label_set_text(lock.clock, "--:--");
+    lock->clock = lv_label_create(clock_row);
+    lv_obj_set_style_text_font(lock->clock, lvgl::getClockFont(), LV_STATE_DEFAULT);
+    lv_label_set_text(lock->clock, "--:--");
 
-    lock.ampm = lv_label_create(clock_row);
-    lv_obj_set_style_text_font(lock.ampm, lvgl_get_text_font(FONT_SIZE_SMALL), LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_bottom(lock.ampm, 3, LV_STATE_DEFAULT);
-    lv_obj_set_hidden(lock.ampm, true);
+    lock->ampm = lv_label_create(clock_row);
+    lv_obj_set_style_text_font(lock->ampm, lvgl_get_text_font(FONT_SIZE_SMALL), LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_bottom(lock->ampm, 3, LV_STATE_DEFAULT);
+    lv_obj_set_hidden(lock->ampm, true);
 
-    lock.date = lv_label_create(root);
-    lv_obj_set_style_text_font(lock.date, lvgl_get_text_font(FONT_SIZE_SMALL), LV_STATE_DEFAULT);
-    lv_obj_set_style_text_opa(lock.date, LV_OPA_70, LV_STATE_DEFAULT);
+    lock->date = lv_label_create(root);
+    lv_obj_set_style_text_font(lock->date, lvgl_get_text_font(FONT_SIZE_SMALL), LV_STATE_DEFAULT);
+    lv_obj_set_style_text_opa(lock->date, LV_OPA_70, LV_STATE_DEFAULT);
     lv_obj_update_layout(root);
-    lv_obj_align_to(lock.date, clock_row, LV_ALIGN_OUT_BOTTOM_MID, 0, 6);
+    lv_obj_align_to(lock->date, clock_row, LV_ALIGN_OUT_BOTTOM_MID, 0, 6);
 
     auto* hint = lv_obj_create(root);
     lv_obj_remove_style_all(hint);
@@ -163,14 +190,14 @@ bool lockScreenShow() {
     updateClock();
     const time_t now = time(nullptr);
     const tm* local = localtime(&now);
-    lock.timer = lv_timer_create(onTimer, local != nullptr ? lvgl::millisToNextMinute(*local) : 60000U, nullptr);
+    lock->timer = lv_timer_create(onTimer, local != nullptr ? lvgl::millisToNextMinute(*local) : 60000U, nullptr);
 
-    lock.previous_group = lv_group_get_default();
-    lock.group = lv_group_create();
-    if (lock.group != nullptr) {
-        lv_group_add_obj(lock.group, root);
+    lock->previous_group = lv_group_get_default();
+    lock->group = lv_group_create();
+    if (lock->group != nullptr) {
+        lv_group_add_obj(lock->group, root);
         lv_group_focus_obj(root);
-        lvgl_keyboard_set_active_group(lock.group);
+        lvgl_keyboard_set_active_group(lock->group);
     }
 
     consumePressedPointers();
@@ -178,29 +205,32 @@ bool lockScreenShow() {
 }
 
 void lockScreenHide() {
-    if (lock.timer != nullptr) {
-        lv_timer_delete(lock.timer);
-        lock.timer = nullptr;
+    if (lock == nullptr) {
+        return;
+    }
+    if (lock->timer != nullptr) {
+        lv_timer_delete(lock->timer);
+        lock->timer = nullptr;
     }
 
-    if (lock.group != nullptr) {
+    if (lock->group != nullptr) {
         // Put the keypad/encoder indevs back on the app group before the lock group disappears
-        lvgl_keyboard_set_active_group(lock.previous_group);
+        lvgl_keyboard_set_active_group(lock->previous_group);
     }
-    if (lock.root != nullptr) {
-        lv_obj_delete(lock.root);
+    if (lock->root != nullptr) {
+        lv_obj_delete(lock->root);
     }
-    if (lock.group != nullptr) {
-        lv_group_delete(lock.group);
+    if (lock->group != nullptr) {
+        lv_group_delete(lock->group);
     }
 
-    lock.root = nullptr;
-    lock.clock = nullptr;
-    lock.ampm = nullptr;
-    lock.date = nullptr;
-    lock.group = nullptr;
-    lock.previous_group = nullptr;
-    lock.date_text[0] = '\0';
+    lock->root = nullptr;
+    lock->clock = nullptr;
+    lock->ampm = nullptr;
+    lock->date = nullptr;
+    lock->group = nullptr;
+    lock->previous_group = nullptr;
+    lock->date_text[0] = '\0';
 }
 
 }

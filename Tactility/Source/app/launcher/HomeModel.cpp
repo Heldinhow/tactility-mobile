@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #ifdef ESP_PLATFORM
 #include <sdkconfig.h>
 #endif
@@ -19,8 +21,6 @@
 namespace tt::app::launcher {
 
 namespace {
-
-const Favourites favourites;
 
 void collectManifest(const ::AppManifest* manifest, void* context) {
     static_cast<std::vector<::AppManifest>*>(context)->push_back(*manifest);
@@ -46,6 +46,7 @@ std::vector<HomeApp> collectHomeApps() {
     std::vector<std::string> incompatible_ids;
     app_manager_for_each_package(collectIncompatibleAppIds, &incompatible_ids);
 
+    const Favourites favourites;
     const std::vector<std::string> favourite_ids = favourites.ids();
     std::vector<HomeApp> apps;
     apps.reserve(manifests.size());
