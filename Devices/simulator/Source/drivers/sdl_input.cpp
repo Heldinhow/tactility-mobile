@@ -228,7 +228,7 @@ void sdl_input_pump() {
     static bool dev_action_done = false;
     if (!dev_action_done) {
         const char* action = getenv("TACTILITY_SIM_ACTION");
-        if (action != nullptr && SDL_GetTicks() >= 500) {
+        if (action != nullptr && SDL_GetTicks() >= 2500) {
             simulatorDevActionList(action);
             dev_action_done = true;
         }

@@ -429,13 +429,13 @@ and plural).
 
 ## RV2-15: The v2 software keyboard
 
+**Status:** done (one documented colour deviation: see below)
+
 **What to build:** A single global software keyboard: four rows of 40 px keys with 1 px gaps, radius
 8, 14/16 labels, no popup, modifier colours, Go in accent, layers lower/upper/123 and a 140 ms slide.
 It replaces the stock keyboard on v2 builds and stays hidden when a hardware keyboard is present.
 
 **Blocked by:** RV2-01, RV2-03, RV2-04.
-
-**Status:** ready-for-agent
 
 **Test seam:** No pure seam; a simulator capture with a focused text field, plus the owner checklist.
 
@@ -448,6 +448,11 @@ It replaces the stock keyboard on v2 builds and stays hidden when a hardware key
 - [ ] 140 ms slide; hidden on blur; a hardware keyboard still suppresses it.
 - [ ] The last row's taps work at the screen edge.
 - [ ] Build green; owner check.
+
+**Known deviation:** the modifier keys (Shift, 123, space) use the letter-key background
+(`#242A33`). A single `lv_buttonmatrix` has no per-key background style, so the darker `surface`
+modifier colour from the mockup is the one visual difference; the labels, actions, row geometry and
+the Go accent match the design.
 
 ---
 

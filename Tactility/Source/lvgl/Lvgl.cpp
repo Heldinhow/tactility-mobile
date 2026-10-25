@@ -116,7 +116,13 @@ static lv_obj_t* windowManagerScreenInit(lv_obj_t* root) {
     // Parented to root (not app_container/vertical_container) so it overlays on top of
     // everything, including the statusbar, regardless of which app is showing. Hidden until a
     // focused textarea shows it (see lvgl_keyboard_add_textarea()/textarea_show_keyboard()).
+#if defined(CONFIG_TT_MOBILE_HOME)
+    // The window root scrolls its app content; the keyboard is anchored to the screen instead, so
+    // focusing a field cannot scroll it off-screen.
+    lvgl_software_keyboard_construct(&softwareKeyboard, lv_screen_active());
+#else
     lvgl_software_keyboard_construct(&softwareKeyboard, root);
+#endif
 
     // Places the statusbar on top, or in a strip on the side
     systemBarsAttach(vertical_container, statusbar, app_container);

@@ -4,11 +4,18 @@
 #include <lvgl/devices/keyboard_private.h>
 #include <lvgl/grid_navigation.h>
 #include <lvgl/lvgl.h>
+#include <lvgl/fonts.h>
+#include <lvgl/theme.h>
 
 #include <tactility/drivers/keyboard.h>
 #include <tactility/log.h>
 
+#include <cstring>
 #include <vector>
+
+#ifdef ESP_PLATFORM
+#include <sdkconfig.h>
+#endif
 
 constexpr auto* TAG = "lvgl_keyboard";
 
@@ -19,6 +26,193 @@ static LvglSoftwareKeyboard last_software_keyboard = {
 static lv_group_t* keyboard_group;
 // The group that keypad indevs are attached to: keyboard_group, or the group of an overlay
 static lv_group_t* active_group;
+
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+
+// The v2 keyboard: four 40 px rows of 1 px gaps. The widget stays an lv_keyboard (one
+// buttonmatrix), but its stock key handler is replaced so the labels can be the design's
+// "123", "space" and "Go" and the mode keys can use icons. The colours mirror
+// Tactility/lvgl/MobileTheme.h, which this module cannot include.
+namespace {
+
+constexpr uint32_t KB_BG = 0x0E1116;
+constexpr uint32_t KB_SURFACE = 0x1A1F27;
+constexpr uint32_t KB_SURFACE_2 = 0x242A33;
+constexpr uint32_t KB_LINE_SOFT = 0x1F2530;
+constexpr uint32_t KB_TEXT = 0xE8ECF1;
+constexpr uint32_t KB_ON_ACCENT = 0x0B1118;
+constexpr uint32_t KB_ACCENT = 0x4C8DFF;
+constexpr int32_t KB_HEIGHT = 168;
+constexpr int32_t KB_TOP = 320 - KB_HEIGHT;
+
+// Widths are in half-key units (20 per row), as in the mockup
+const char* const KB_MAP_LOWER[] = {
+    "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "\n",
+    " ", "a", "s", "d", "f", "g", "h", "j", "k", "l", " ", "\n",
+    LV_SYMBOL_UP, "z", "x", "c", "v", "b", "n", "m", LV_SYMBOL_BACKSPACE, "\n",
+    "123", "space", "Go", ""
+};
+const uint32_t KB_CTRL_LOWER[] = {
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    LV_BUTTONMATRIX_CTRL_HIDDEN | 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, LV_BUTTONMATRIX_CTRL_HIDDEN | 1,
+    3, 2, 2, 2, 2, 2, 2, 2, 3,
+    4, 11, LV_BUTTONMATRIX_CTRL_CHECKED | 5,
+    0
+};
+
+const char* const KB_MAP_UPPER[] = {
+    "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "\n",
+    " ", "A", "S", "D", "F", "G", "H", "J", "K", "L", " ", "\n",
+    LV_SYMBOL_UP, "Z", "X", "C", "V", "B", "N", "M", LV_SYMBOL_BACKSPACE, "\n",
+    "123", "space", "Go", ""
+};
+const uint32_t KB_CTRL_UPPER[] = {
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    LV_BUTTONMATRIX_CTRL_HIDDEN | 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, LV_BUTTONMATRIX_CTRL_HIDDEN | 1,
+    LV_BUTTONMATRIX_CTRL_CHECKED | 3, 2, 2, 2, 2, 2, 2, 2, 3,
+    4, 11, LV_BUTTONMATRIX_CTRL_CHECKED | 5,
+    0
+};
+
+const char* const KB_MAP_SPECIAL[] = {
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "\n",
+    " ", "-", "/", ":", ";", "(", ")", "$", "&", "\"", " ", "\n",
+    "~", "!", "?", ",", ".", "'", "*", "#", LV_SYMBOL_BACKSPACE, "\n",
+    "abc", "space", "Go", ""
+};
+const uint32_t KB_CTRL_SPECIAL[] = {
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    LV_BUTTONMATRIX_CTRL_HIDDEN | 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, LV_BUTTONMATRIX_CTRL_HIDDEN | 1,
+    3, 2, 2, 2, 2, 2, 2, 2, 3,
+    4, 11, LV_BUTTONMATRIX_CTRL_CHECKED | 5,
+    0
+};
+
+void onV2KeyboardValue(lv_event_t* event) {
+    auto* keyboard = lv_event_get_target_obj(event);
+    const uint32_t id = lv_buttonmatrix_get_selected_button(keyboard);
+    if (id == LV_BUTTONMATRIX_BUTTON_NONE) {
+        return;
+    }
+    const char* text = lv_buttonmatrix_get_button_text(keyboard, id);
+    if (text == nullptr) {
+        return;
+    }
+    lv_obj_t* textarea = lv_keyboard_get_textarea(keyboard);
+    if (textarea == nullptr) {
+        return;
+    }
+    if (strcmp(text, "123") == 0) {
+        lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_SPECIAL);
+    } else if (strcmp(text, "abc") == 0) {
+        lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_TEXT_LOWER);
+    } else if (strcmp(text, LV_SYMBOL_UP) == 0) {
+        const auto mode = lv_keyboard_get_mode(keyboard);
+        lv_keyboard_set_mode(keyboard, mode == LV_KEYBOARD_MODE_TEXT_UPPER ? LV_KEYBOARD_MODE_TEXT_LOWER : LV_KEYBOARD_MODE_TEXT_UPPER);
+    } else if (strcmp(text, LV_SYMBOL_BACKSPACE) == 0) {
+        lv_textarea_delete_char(textarea);
+    } else if (strcmp(text, "space") == 0) {
+        lv_textarea_add_char(textarea, ' ');
+    } else if (strcmp(text, "Go") == 0) {
+        lv_obj_send_event(textarea, LV_EVENT_READY, nullptr);
+    } else {
+        lv_textarea_add_text(textarea, text);
+    }
+}
+
+void styleV2Keyboard(lv_obj_t* keyboard) {
+    // The keyboard is a child of the window root, which lays its children out with flex. Keep the
+    // keyboard out of that layout so its design position (0,152) is honoured.
+    lv_obj_add_flag(keyboard, LV_OBJ_FLAG_IGNORE_LAYOUT);
+    // lv_keyboard's constructor aligns the widget to the bottom; clear that alignment so the
+    // design position survives the layout pass.
+    lv_obj_set_align(keyboard, LV_ALIGN_DEFAULT);
+    lv_obj_set_pos(keyboard, 0, KB_TOP);
+    lv_obj_set_size(keyboard, 240, KB_HEIGHT);
+    lv_obj_set_style_bg_color(keyboard, lv_color_hex(KB_BG), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(keyboard, LV_OPA_COVER, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(keyboard, 1, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_side(keyboard, LV_BORDER_SIDE_TOP, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_color(keyboard, lv_color_hex(KB_LINE_SOFT), LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(keyboard, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_top(keyboard, 4, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_bottom(keyboard, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_left(keyboard, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_right(keyboard, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_row(keyboard, 1, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_column(keyboard, 1, LV_STATE_DEFAULT);
+
+    const lv_style_selector_t items = LV_PART_ITEMS;
+    lv_obj_set_style_bg_color(keyboard, lv_color_hex(KB_SURFACE_2), items);
+    lv_obj_set_style_bg_opa(keyboard, LV_OPA_COVER, items);
+    lv_obj_set_style_radius(keyboard, 8, items);
+    lv_obj_set_style_border_width(keyboard, 0, items);
+    lv_obj_set_style_text_color(keyboard, lv_color_hex(KB_TEXT), items);
+    lv_obj_set_style_text_font(keyboard, lvgl_get_text_font(FONT_SIZE_DENSE), items);
+    // The stock keyboard marks the submit key checked, which gives it the accent role
+    lv_obj_set_style_bg_color(keyboard, lv_color_hex(KB_SURFACE), items | LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(keyboard, lv_color_hex(KB_ACCENT), items | LV_STATE_CHECKED);
+    lv_obj_set_style_text_color(keyboard, lv_color_hex(KB_ON_ACCENT), items | LV_STATE_CHECKED);
+}
+
+void installV2Map(lv_obj_t* keyboard) {
+    // lv_keyboard's stock handler recognises its own "1#"/"abc"/"ABC"/new-line tokens by text.
+    // Replace it so the design's labels and the mode keys keep their meaning.
+    while (lv_obj_get_event_count(keyboard) > 0) {
+        lv_event_dsc_t* dsc = lv_obj_get_event_dsc(keyboard, 0);
+        if (dsc == nullptr || !lv_obj_remove_event_dsc(keyboard, dsc)) {
+            break;
+        }
+    }
+    lv_obj_add_event_cb(keyboard, onV2KeyboardValue, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    const auto* lower_ctrl = reinterpret_cast<const lv_buttonmatrix_ctrl_t*>(KB_CTRL_LOWER);
+    const auto* upper_ctrl = reinterpret_cast<const lv_buttonmatrix_ctrl_t*>(KB_CTRL_UPPER);
+    const auto* special_ctrl = reinterpret_cast<const lv_buttonmatrix_ctrl_t*>(KB_CTRL_SPECIAL);
+    lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_TEXT_LOWER, KB_MAP_LOWER, lower_ctrl);
+    lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_TEXT_UPPER, KB_MAP_UPPER, upper_ctrl);
+    lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_SPECIAL, KB_MAP_SPECIAL, special_ctrl);
+    lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_NUMBER, KB_MAP_SPECIAL, special_ctrl);
+    lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_TEXT_LOWER);
+    lv_keyboard_set_popovers(keyboard, false);
+    styleV2Keyboard(keyboard);
+}
+
+bool isV2KeyboardDisplay(lv_obj_t* keyboard) {
+    lv_display_t* display = lv_obj_get_display(keyboard);
+    return lv_display_get_horizontal_resolution(display) == 240 && lv_display_get_vertical_resolution(display) == 320;
+}
+
+void animateKeyboard(lv_obj_t* keyboard, bool show) {
+    LvglThemeSettings theme_settings = {};
+    lvgl_theme_get_settings(&theme_settings);
+    if (!theme_settings.animations_enabled) {
+        lv_obj_set_style_translate_y(keyboard, 0, LV_STATE_DEFAULT);
+        lv_obj_set_hidden(keyboard, !show);
+        return;
+    }
+
+    lv_anim_t animation;
+    lv_anim_init(&animation);
+    lv_anim_set_var(&animation, keyboard);
+    lv_anim_set_exec_cb(&animation, [](void* object, int32_t value) {
+        lv_obj_set_style_translate_y(static_cast<lv_obj_t*>(object), value, LV_STATE_DEFAULT);
+    });
+    lv_anim_set_values(&animation, show ? KB_HEIGHT : 0, show ? 0 : KB_HEIGHT);
+    lv_anim_set_duration(&animation, 140);
+    lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
+    if (!show) {
+        lv_anim_set_completed_cb(&animation, [](lv_anim_t* animation) {
+            lv_obj_set_hidden(static_cast<lv_obj_t*>(animation->var), true);
+        });
+    }
+    lv_anim_start(&animation);
+}
+
+}
+
+#endif // CONFIG_TT_MOBILE_HOME
 
 extern "C" {
 
@@ -268,6 +462,11 @@ static void textarea_hide_keyboard(lv_event_t* event) {
 void lvgl_software_keyboard_construct(LvglSoftwareKeyboard* keyboard, lv_obj_t* parent) {
     keyboard->object = lv_keyboard_create(parent);
     lv_obj_set_hidden(keyboard->object, true);
+#if defined(CONFIG_TT_MOBILE_HOME)
+    if (isV2KeyboardDisplay(keyboard->object)) {
+        installV2Map(keyboard->object);
+    }
+#endif
     last_software_keyboard = *keyboard;
 }
 
@@ -282,12 +481,25 @@ void lvgl_software_keyboard_destruct(LvglSoftwareKeyboard* keyboard) {
 
 void lvgl_software_keyboard_show(LvglSoftwareKeyboard* keyboard, lv_obj_t* textarea) {
     assert(keyboard->object != nullptr);
-    lv_obj_set_hidden(keyboard->object, false);
     lv_keyboard_set_textarea(keyboard->object, textarea);
+#if defined(CONFIG_TT_MOBILE_HOME)
+    if (isV2KeyboardDisplay(keyboard->object)) {
+        lv_obj_set_hidden(keyboard->object, false);
+        animateKeyboard(keyboard->object, true);
+        return;
+    }
+#endif
+    lv_obj_set_hidden(keyboard->object, false);
 }
 
 void lvgl_software_keyboard_hide(LvglSoftwareKeyboard* keyboard) {
     assert(keyboard->object != nullptr);
+#if defined(CONFIG_TT_MOBILE_HOME)
+    if (isV2KeyboardDisplay(keyboard->object)) {
+        animateKeyboard(keyboard->object, false);
+        return;
+    }
+#endif
     lv_obj_set_hidden(keyboard->object, true);
 }
 

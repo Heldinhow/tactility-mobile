@@ -19,6 +19,7 @@
 #include <app/manager.h>
 #include <app/start.h>
 
+#include <lvgl/devices/keyboard.h>
 #include <lvgl/lvgl.h>
 
 #include <lvgl_window_manager/window_manager.h>
@@ -28,7 +29,6 @@
 #include <tactility/device.h>
 #include <tactility/drivers/wifi.h>
 #include <tactility/error.h>
-#include <tactility/log.h>
 #include <tactility/log.h>
 
 #include <cstdlib>
@@ -49,6 +49,43 @@ void connectFixtureWifi() {
     wifi_set_radio_on(device);
     wifi_station_connect(device, "Home Wifi", "", 0);
     device_put(device);
+}
+
+lv_obj_t* findTextarea(lv_obj_t* parent) {
+    const uint32_t count = lv_obj_get_child_count(parent);
+    for (uint32_t i = 0; i < count; i++) {
+        lv_obj_t* child = lv_obj_get_child(parent, i);
+        if (lv_obj_check_type(child, &lv_textarea_class)) {
+            return child;
+        }
+        if (lv_obj_t* found = findTextarea(child)) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
+/** The simulator has no lv_textarea_create wrapper, so the dev aid shows the keyboard itself */
+void showKeyboardForFocusedTextarea() {
+    lvgl_lock();
+    lv_group_t* group = lv_group_get_default();
+    lv_obj_t* focused = group != nullptr ? lv_group_get_focused(group) : nullptr;
+    if (focused == nullptr || !lv_obj_check_type(focused, &lv_textarea_class)) {
+        focused = findTextarea(lv_screen_active());
+    }
+    auto* keyboard = lvgl_software_keyboard_get_last();
+    if (focused != nullptr && keyboard != nullptr && keyboard->object != nullptr) {
+        lvgl_software_keyboard_show(keyboard, focused);
+        lv_obj_update_layout(keyboard->object);
+        LOG_I("sim_dev", "keyboard at %d,%d size %dx%d hidden=%d translate=%d",
+              (int)lv_obj_get_x(keyboard->object), (int)lv_obj_get_y(keyboard->object),
+              (int)lv_obj_get_width(keyboard->object), (int)lv_obj_get_height(keyboard->object),
+              (int)lv_obj_has_flag(keyboard->object, LV_OBJ_FLAG_HIDDEN),
+              (int)lv_obj_get_style_translate_y(keyboard->object, LV_PART_MAIN));
+    } else {
+        LOG_I("sim_dev", "keyboard: focused=%p keyboard=%p", (void*)focused, (void*)keyboard);
+    }
+    lvgl_unlock();
 }
 
 void startApp(const char* app_id) {
@@ -168,6 +205,14 @@ static void runDevAction(int index) {
                 startApp("tactility.wifimanage");
                 std::this_thread::sleep_for(700ms);
                 tt::app::wificonnect::start("Cafe_5G");
+                // The app's window is built after this sequence, so the keyboard is shown by a
+                // timer on the LVGL task rather than from here
+                lvgl_lock();
+                lv_timer_create([](lv_timer_t* timer) {
+                    showKeyboardForFocusedTextarea();
+                    lv_timer_delete(timer);
+                }, 2500, nullptr);
+                lvgl_unlock();
                 break;
             default:
                 break;
@@ -201,11 +246,13 @@ static void runActionList(void* context) {
         const uint32_t now = lv_tick_get();
         const uint32_t wait = delay > now ? delay - now : 100;
         LOG_I("sim_dev", "screenshot in %u ms", (unsigned)wait);
+        lvgl_lock();
         lv_timer_create([](lv_timer_t* timer) {
             LOG_I("sim_dev", "screenshot");
             simulator_take_screenshot_now();
             lv_timer_delete(timer);
         }, wait, nullptr);
+        lvgl_unlock();
     }
 }
 
