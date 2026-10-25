@@ -1,6 +1,8 @@
 # Redesign v2: the mobile UI at 240x320
 
-Status: ready-for-agent (branch `feat/redesign-v2`, device `es3c28p`, 240x320 portrait)
+Status: implemented on `feat/redesign-v2` (device `es3c28p`, 240x320 portrait). The binary
+footprint and captures are in `docs/mobile/redesign-v2-footprint.md`; runtime heap and task
+high-water marks are pending the owner's flash.
 
 Design source: branch `design/redesign-mockups`, commit `5e5e06d0`, `docs/design-v2/`
 (`SPEC.md`, `src/index.html`, `src/styles.css`, `png/1x/*.png`, `png/2x/*.png`, `checks.json`).

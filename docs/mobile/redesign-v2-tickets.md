@@ -488,7 +488,7 @@ method and produce the footprint report; run the stack probe and remove it; writ
 
 **Blocked by:** RV2-01 through RV2-16.
 
-**Status:** ready-for-agent
+**Status:** done (software and captures; runtime heap/high-water pending the owner's flash)
 
 **Test seam:** All four pure suites, the simulator captures and the owner checklist.
 

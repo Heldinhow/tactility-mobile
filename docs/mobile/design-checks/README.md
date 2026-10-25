@@ -29,8 +29,9 @@ profile set to `ES3C28P` (`Data/tactility/simulator_profile.txt`), which renders
 | F8 | Alert dialog over Wi-Fi |
 | F9 | Wi-Fi password screen for `Cafe_5G` |
 
-Every action except Home and Lock first joins the mock driver's `Home Wifi` fixture network, so the
-captures show a connected state. `F7` uses the same fixture radio.
+The Wi-Fi, dialog and password actions join the mock driver's `Home Wifi` fixture; Home, Lock,
+Files, panel and Recents use whatever radio state the simulator already has. `F7` uses the fixture
+radio so the lock's Wi-Fi indicator is visible.
 
 Example:
 

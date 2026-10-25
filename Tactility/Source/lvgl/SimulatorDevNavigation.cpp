@@ -152,6 +152,8 @@ static void runDevAction(int index) {
                 tt::dispatchOnMainDispatcher([](void*) { showHome(); }, nullptr);
                 break;
             case 2:
+                connectFixtureWifi();
+                std::this_thread::sleep_for(400ms);
                 startApp("tactility.settings");
                 break;
             case 3:
