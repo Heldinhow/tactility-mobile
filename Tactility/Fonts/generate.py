@@ -31,6 +31,8 @@ TEXT_CODEPOINT_RANGES = [
 
 ASCII_CODEPOINT_RANGES = [
     (0x0020, 0x007E),
+    (0x00B7, 0x00B7), # middle dot, used in the Wi-Fi caption
+    (0x2026, 0x2026), # ellipsis, used in the scanning/joining states
 ]
 
 CLOCK_CODEPOINT_RANGES = [
