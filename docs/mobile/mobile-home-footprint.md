@@ -152,8 +152,20 @@ Frames measured from the ELF (`entry a1`), deepest Home-build chain, app side on
 | **~1,716** | **~1,514** | **app-side total (−202 B)** |
 
 The remaining chain is LVGL object creation, whose frames this binutils cannot decode past
-`lv_obj_create` (the disassembly comes back empty for that section), so it is not in the table.
-From the crash we know the pre-fix total exceeded 3,072 B, which puts the LVGL part at ≥1.35 KB;
-the post-fix estimate is therefore ~2.9 KB of 3,072 B, a margin below the 25% gate. That is why
-`boot-crash-tickets.md` (BC-06) proposes raising `.depth` to 6144 B (+3 KB PSRAM, no internal RAM,
-no flash), and why the on-device high-water reading is still the gate before that value is final.
+`lv_obj_create` (the disassembly comes back empty for that section), so it is not in the table. The
+crash only proves the pre-fix total exceeded 3,072 B, i.e. LVGL contributed at least 1.35 KB; it
+gives no upper bound. Since a 25% margin cannot be shown from that lower bound, BC-06 raised
+`.depth` to 6,144 B (+3 KB PSRAM, zero internal RAM, zero flash) instead of trusting it. The
+on-device high-water reading is what turns that into a measured number.
+
+### Boot heap
+
+From the crash capture (`/tmp/serial-crash.log`, 4,178 ms, before the fix):
+
+| | Available | Total |
+|---|---:|---:|
+| Internal | 126,299 B | 327,359 B |
+| PSRAM | 4,492,232 B | 4,605,168 B |
+
+The after values need a flash of this branch. The expected internal difference is +~510 B: the
+Context (+~400 B) and the pinned ids (+~110 B) now live on the heap.

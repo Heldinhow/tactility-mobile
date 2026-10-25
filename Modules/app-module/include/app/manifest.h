@@ -50,8 +50,8 @@ enum AppManifestFlags {
 struct AppStackConfig {
     /** Stack depth in units of `StackType_t`: bytes on FreeRTOS/ESP-IDF (xtensa and riscv ports
      * define `portSTACK_TYPE` as a byte type) and words on the POSIX port. 3072 is therefore 3 KB
-     * on the device, not 12 KB. 0 uses APP_DEFAULT_STACK_DEPTH. Must not exceed
-     * APP_STACK_SIZE_MAX. */
+     * on the device, not 12 KB. 0 uses the scheduler's default (8192 bytes' worth). Must not
+     * exceed APP_STACK_SIZE_MAX. */
     uint16_t depth;
     /** Desired memory capability.
      * 0 means default.

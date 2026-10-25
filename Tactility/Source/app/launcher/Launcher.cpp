@@ -400,6 +400,8 @@ void createWidgets(lv_obj_t* parent, void* userData) {
 
 void destroyWidgets(void* userData) {
     auto* ctx = static_cast<Context*>(userData);
+    // The grid is gone, so a later collect must not see a build's stack collection
+    ctx->buildApps = nullptr;
 #if defined(CONFIG_TT_MOBILE_HOME)
     if (ctx->clockTimer != nullptr) {
         lv_timer_delete(ctx->clockTimer);
@@ -522,8 +524,10 @@ extern const ::AppManifest manifest = {
     .category = APP_CATEGORY_SYSTEM,
     .location = { .type = APP_LOCATION_MEMORY, .location = reinterpret_cast<void*>(appMain) },
     .flags = APP_MANIFEST_FLAG_HIDDEN,
-    // All file operations run on the file operations task, so the stack can be in external RAM
-    .stack = { .depth = 3072, .desired_memory_capability = MEMORY_CAPABILITY_EXTERNAL },
+    // All file operations run on the file operations task, so the stack can be in external RAM.
+    // 6144 bytes: the Home build runs inline on this task and the 3072-byte value was written as
+    // if it were words (see docs/mobile/boot-crash-spec.md).
+    .stack = { .depth = 6144, .desired_memory_capability = MEMORY_CAPABILITY_EXTERNAL },
 };
 
 } // namespace

@@ -127,23 +127,18 @@ a `.depth` change (and its PSRAM cost); if not, record "no increase".
 
 **Blocked by:** BC-01.
 
-**Status:** done (comment); `.depth` change proposed, awaiting the owner
+**Status:** done
 
 - [x] The comment no longer claims "words": it now says units of `StackType_t` (bytes on ESP-IDF,
       words on POSIX) and points at `APP_DEFAULT_STACK_DEPTH`.
-- [x] The `.depth` decision is recorded here with the measured margin (below).
-- [x] No `.depth` value changed: the proposal needs the owner's OK because it is a firmware cost.
+- [x] The `.depth` decision is recorded here with the margin it was based on (below).
+- [x] `.depth` 3072 -> 6144 in `Tactility/Source/app/launcher/Launcher.cpp`: +3 KB PSRAM, zero
+      internal RAM, zero flash, one line plus a comment.
 
-**Measurement and proposal:** app-side frames leave ~1.5 KB of the 3,072 B stack, and the crash
-proves the total exceeded 3,072 B before the fix, so the LVGL part is >=1.35 KB. Post-fix total is
-~2.9 KB, a margin of ~5%, below the 25% gate. Proposal: `.depth` 3072 -> 6144 (+3 KB PSRAM, zero
-internal RAM, zero flash) in `Tactility/Source/app/launcher/Launcher.cpp`. One line:
-
-```cpp
-.stack = { .depth = 6144, .desired_memory_capability = MEMORY_CAPABILITY_EXTERNAL },
-```
-
-The on-device high-water reading should confirm the number before it is treated as final.
+**Measurement and decision:** app-side frames leave ~1.5 KB of the 3,072 B stack. The crash proves
+the pre-fix total exceeded 3,072 B, so LVGL's share is at least 1.35 KB; that is a lower bound, not
+a measurement, so a 25% margin cannot be demonstrated. The rule above then applied and the stack
+was doubled. The high-water probe on hardware is what confirms or right-sizes it.
 
 ## BC-07: Windows are built on the LVGL task (follow-up)
 
