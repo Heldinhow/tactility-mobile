@@ -32,3 +32,6 @@ sdkconfig.board.*.dev
 __pycache__
 .DS_Store
 .cache
+
+# Simulator screen captures from the F12 development aid
+sim-screenshot.ppm

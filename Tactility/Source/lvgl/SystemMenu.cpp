@@ -472,7 +472,7 @@ static void createWidgets(lv_obj_t* parent, void* /*userData*/) {
 }
 
 void systemMenuShow() {
-#if defined(CONFIG_TT_MOBILE_HOME)
+#if defined(CONFIG_TT_MOBILE_HOME) && defined(ESP_PLATFORM)
     if (auto display_idle = service::displayidle::findService()) {
         if (display_idle->isLocked()) {
             return;

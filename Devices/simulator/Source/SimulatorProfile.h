@@ -23,7 +23,7 @@ struct Profile {
     bool pointer;
 };
 
-constexpr size_t PROFILE_COUNT = 6;
+constexpr size_t PROFILE_COUNT = 7;
 
 /** Overrides the default orientation of the selected profile */
 enum class OrientationOverride {

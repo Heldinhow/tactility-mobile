@@ -4,10 +4,14 @@
 
 #include <tactility/drivers/keyboard.h>
 
+#include <lvgl/lvgl.h>
+#include <lvgl/draw/lv_snapshot.h>
+
 #include <SDL2/SDL.h>
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstdio>
 #include <mutex>
 
 namespace {
@@ -93,6 +97,33 @@ uint32_t keycode_to_key(SDL_Keycode sdl_key, bool shift) {
     }
 }
 
+/**
+ * Development aid for the screen comparisons: F12 saves the active screen as a PPM (RGB888).
+ * TACTILITY_SIM_SCREENSHOT overrides the path; the default is next to the simulator's working
+ * directory. A PPM keeps this free of an encoder dependency; the verification step converts it.
+ */
+void take_screenshot() {
+    lvgl_lock();
+    lv_draw_buf_t* snapshot = lv_snapshot_take(lv_screen_active(), LV_COLOR_FORMAT_RGB888);
+    if (snapshot != nullptr) {
+        const char* path = getenv("TACTILITY_SIM_SCREENSHOT");
+        if (path == nullptr) {
+            path = "sim-screenshot.ppm";
+        }
+        FILE* file = fopen(path, "wb");
+        if (file != nullptr) {
+            fprintf(file, "P6\n%u %u\n255\n", static_cast<unsigned>(snapshot->header.w), static_cast<unsigned>(snapshot->header.h));
+            const auto* data = static_cast<const uint8_t*>(snapshot->data);
+            for (uint32_t y = 0; y < snapshot->header.h; y++) {
+                fwrite(data + y * snapshot->header.stride, 1, snapshot->header.w * 3, file);
+            }
+            fclose(file);
+        }
+        lv_draw_buf_destroy(snapshot);
+    }
+    lvgl_unlock();
+}
+
 }
 
 void sdl_input_pump() {
@@ -133,7 +164,11 @@ void sdl_input_pump() {
                     }
                     break;
                 case SDL_KEYDOWN:
-                    push_key(keycode_to_key(event.key.keysym.sym, (event.key.keysym.mod & KMOD_SHIFT) != 0));
+                    if (event.key.keysym.sym == SDLK_F12) {
+                        take_screenshot();
+                    } else {
+                        push_key(keycode_to_key(event.key.keysym.sym, (event.key.keysym.mod & KMOD_SHIFT) != 0));
+                    }
                     break;
                 case SDL_TEXTINPUT:
                     // ASCII only (first byte of event.text.text) - sufficient for a simulator keyboard.
@@ -160,6 +195,16 @@ void sdl_input_pump() {
 
     if (quit_requested) {
         exit(0);
+    }
+
+    // Development aid: capture once after a delay without needing a window or key interaction
+    static bool auto_capture_done = false;
+    if (!auto_capture_done) {
+        const char* delay = getenv("TACTILITY_SIM_SCREENSHOT_DELAY_MS");
+        if (delay != nullptr && SDL_GetTicks() >= static_cast<uint32_t>(atoi(delay))) {
+            take_screenshot();
+            auto_capture_done = true;
+        }
     }
 }
 
