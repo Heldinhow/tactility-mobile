@@ -266,8 +266,10 @@ void updateSurfaceTintRow(Context* ctx) {
 
 void updateThemeWidgets(Context* ctx) {
     const bool dark = isDark(ctx->pendingSettings);
-    setChecked(ctx->lightChip, !dark);
-    setChecked(ctx->darkChip, dark);
+    if (ctx->lightChip != nullptr) {
+        setChecked(ctx->lightChip, !dark);
+        setChecked(ctx->darkChip, dark);
+    }
     const bool compact = isCompact(ctx->pendingSettings);
     setChecked(ctx->regularDensityChip, !compact);
     setChecked(ctx->compactDensityChip, compact);
@@ -549,6 +551,7 @@ ColorRowWidgets createColorRow(lv_obj_t* parent, size_t index, Context* ctx) {
 void createThemeCard(lv_obj_t* parent, Context* ctx) {
     auto* card = createSection(parent, "Theme");
 
+#if !defined(CONFIG_TT_MOBILE_HOME)
     auto* mode_row = createLabeledRow(card, "Mode");
     ctx->lightChip = createChip(mode_row, "Light", onLightPressed, ctx);
     ctx->darkChip = createChip(mode_row, "Dark", onDarkPressed, ctx);
@@ -559,6 +562,7 @@ void createThemeCard(lv_obj_t* parent, Context* ctx) {
         ctx->regularThemeChip = createChip(style_row, "Regular", onRegularThemePressed, ctx);
         ctx->monoThemeChip = createChip(style_row, "Mono", onMonoThemePressed, ctx);
     }
+#endif
 
     auto* density_row = createLabeledRow(card, "Density");
     ctx->regularDensityChip = createChip(density_row, "Regular", onRegularDensityPressed, ctx);
@@ -731,11 +735,13 @@ void createWidgets(lv_obj_t* parent, void* userData) {
     const auto color_format = lv_display_get_color_format(lv_obj_get_display(parent));
     ctx->isMonoDisplay = color_format == LV_COLOR_FORMAT_I1 || color_format == LV_COLOR_FORMAT_L8;
     createThemeCard(content, ctx);
+#if !defined(CONFIG_TT_MOBILE_HOME)
     // Monochrome and greyscale displays always use the mono theme, which doesn't use colours
     if (!ctx->isMonoDisplay) {
         createColorsCard(content, ctx);
     }
     createSystemBarsCard(content, ctx);
+#endif
 
 #if !defined(CONFIG_TT_MOBILE_HOME)
     if (lvgl::isFontChangeSupported()) {

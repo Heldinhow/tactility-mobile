@@ -1,12 +1,31 @@
 #include <Tactility/lvgl/Theme.h>
 
+#include <Tactility/lvgl/MobileTheme.h>
+
 #include <lvgl/theme.h>
+
+#ifdef ESP_PLATFORM
+#include <sdkconfig.h>
+#endif
 
 namespace tt::lvgl {
 
 void configureTheme(const settings::appearance::AppearanceSettings& settings) {
     LvglThemeSettings theme_settings;
     lvgl_theme_get_default_settings(&theme_settings);
+#if defined(CONFIG_TT_MOBILE_HOME)
+    // The v2 presentation has one fixed palette. Density and animations remain user settings.
+    theme_settings.is_dark = true;
+    theme_settings.is_mono = false;
+    theme_settings.animations_enabled = settings.animationsEnabled;
+    theme_settings.color_primary = mobile::color(mobile::COLOR_ACCENT);
+    theme_settings.color_secondary = mobile::color(mobile::COLOR_ACCENT);
+    theme_settings.surface_override = true;
+    theme_settings.color_surface = mobile::color(mobile::COLOR_BG);
+    if (settings.densityMode != settings::appearance::DensityMode::DeviceDefault) {
+        theme_settings.is_compact = settings.densityMode == settings::appearance::DensityMode::Compact;
+    }
+#else
     if (settings.themeMode != settings::appearance::ThemeMode::DeviceDefault) {
         theme_settings.is_dark = settings.themeMode == settings::appearance::ThemeMode::Dark;
     }
@@ -28,6 +47,7 @@ void configureTheme(const settings::appearance::AppearanceSettings& settings) {
         theme_settings.surface_override = true;
         theme_settings.color_surface = lv_color_hex(settings::appearance::getSurfaceColor(*settings.surfaceColor, settings.surfaceTintLevel, theme_settings.is_dark));
     }
+#endif
     lvgl_theme_set_settings(&theme_settings);
 }
 
