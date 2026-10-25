@@ -22,21 +22,21 @@ Screen captures: `docs/mobile/design-checks/`
 
 | Metric | Before | After | Delta |
 |---|---:|---:|---:|
-| `Tactility.bin` | 3,894,864 B | 3,923,968 B | **+29,104 B** |
-| Flash `.text` (code) | 2,777,426 B | 2,785,698 B | +8,272 B |
-| Flash `.rodata` | 965,216 B | 986,048 B | +20,832 B |
-| Static DRAM (`.data` + `.bss`) | 65,039 B | 65,167 B | **+128 B** |
-| DIRAM in use | 167,558 B (49.03%) | 167,686 B (49.07%) | +128 B |
+| `Tactility.bin` | 3,894,864 B | 3,923,024 B | **+28,160 B** |
+| Flash `.text` (code) | 2,777,426 B | 2,784,946 B | +7,520 B |
+| Flash `.rodata` | 965,216 B | 985,856 B | +20,640 B |
+| Static DRAM (`.data` + `.bss`) | 65,039 B | 65,135 B | **+96 B** |
+| DIRAM in use | 167,558 B (49.03%) | 167,654 B (49.06%) | +96 B |
 | IRAM | 16,384 B (100%) | 16,384 B (100%) | 0 B |
 
-The app partition is 6 MB; the final binary leaves about 2.36 MB free. The `+29,104 B` is 29% of the
+The app partition is 6 MB; the final binary leaves about 2.36 MB free. The `+28,160 B` is 28% of the
 `+100 KB` flash cap.
 
 ### Budget
 
 - Flash: **met**, +29,104 B against +100 KB.
 - IRAM: **met**, 0 B.
-- Static DRAM: **missed by 128 B** against the +0 B target. The `.data` section is unchanged; the
+- Static DRAM: **missed by 96 B** against the +0 B target. The `.data` section is unchanged; the
   `.bss` growth is the five-card `SystemRecents` overlay state and small counters. The state is
   created at boot and reused; it is not a leak. The alternative is moving the cards to the overlay's
   heap lifetime, which would still leave a small static counter. Recorded as a known cost rather
@@ -51,9 +51,9 @@ The app partition is 6 MB; the final binary leaves about 2.36 MB free. The `+29,
 ### Where the flash went
 
 - Text fonts: the six Inter roles replace the four Adwaita roles; the net text-font cost is inside
-  the `+20,832 B` `.rodata` line.
+  the `+20,640 B` `.rodata` line.
 - Icon masks: 35 A8 masks are read from flash; only the masks the screens reference are linked.
-- Code: `+8,272 B` of `.text` for the tokens, the Home, the Settings hub, the lock, the panel, the
+- Code: `+7,520 B` of `.text` for the tokens, the Home, the Settings hub, the lock, the panel, the
   Recents, the dialog, the Wi-Fi/Files/password screens, the keyboard handler and the font/capture
   fixes.
 
@@ -164,20 +164,45 @@ Before starting: **Display → Orientation = Portrait**. The v2 Home only builds
 
 ## Code review
 
-The final review against the spec and the repository standards found no crash or data-loss defect.
-The findings are:
+### Standards
 
-1. The statusbar Wi-Fi glyph is the Material statusbar glyph, not the v2 `wifis` mask (visual
-   deviation; the mask would need a new image path in the statusbar service).
-2. Static DRAM grew by 128 B instead of 0 B (the Recents overlay state). The flash and IRAM budgets
-   are met.
-3. The keyboard modifier keys share the letter background; one `lv_buttonmatrix` has no per-key
-   background.
-4. The standalone pure tests pass, but the repository's full test target was not run on this
-   checkout because the local FreeRTOS/mbedtls test environment is still the known-awkward one.
-   The seven pure suites were compiled and run directly: 36 cases and 153 assertions, all passing.
-5. The simulator's mock Wi-Fi/audio fixtures are weaker than the board (see the capture deviations);
-   the hardware checklist is the authoritative check.
+- **Hard, fixed:** `SettingsHub.cpp` was the one new source file without the
+  `// SPDX-License-Identifier: Apache-2.0` header required by `CODING_STYLE_CPP.md`.
+- **Hard, fixed:** the temporary `StackProbe.cpp` and its `Init.cpp` call were still in the tree.
+  The ticket says the probe is removed before the final commit; removed, and the probe stays as the
+  snippet in the runtime section.
+- **Judgement:** the toolbar has two navigation APIs, `lvgl_toolbar_set_nav_icon` (icon only, the
+  default close callback stays) and `lvgl_toolbar_set_nav_image` (icon and callback). The screens use
+  both; one API with an optional callback would be smaller.
+- **Judgement:** the Recents overlay keeps its five-card `State` as a static object (the static DRAM
+  finding below). Moving it to the overlay's heap lifetime removes it from `.bss` at the cost of an
+  allocation per open.
+- **Judgement:** Settings, Wi-Fi and Files repeat the row/divider composition locally even though
+  `MobileUi` supplies the card, row and label primitives. The repetition is small and the screens
+  differ in their trailing widgets; not worth another abstraction now.
+- The seven pure test suites were compiled standalone and pass (36 cases, 153 assertions). The full
+  repository test target was not run on this checkout; the local FreeRTOS/mbedtls test environment is
+  the known-awkward one from the previous retros.
+
+### Spec
+
+- **Missing / partial:** the statusbar's Wi-Fi indicator is the existing Material statusbar glyph,
+  not the v2 `wifis` mask. The mask is used on the lock screen and the panel. This is the only
+  visible icon-shape deviation from the mockup.
+- **Budget:** static DRAM grew instead of staying flat (exact delta in the table above; the Recents
+  overlay state is the main contributor). Flash and IRAM meet their caps.
+- **Deviation accepted in RV2-15:** the keyboard's Shift, 123 and space keys use the letter-key
+  background; a single `lv_buttonmatrix` cannot give per-key backgrounds. The labels, geometry,
+  modes and Go accent match.
+- **Pending the owner's flash:** the runtime heap (internal and PSRAM) and the task high-water
+  marks. The firmware must not be flashed without the owner's OK; the probe snippet above is the
+  complete procedure.
+- **Simulator fixture differences, not product defects:** no audio service (so no Sound row in the
+  Settings capture), and the mock Wi-Fi driver reports the radio off to the statusbar and the
+  Settings hub while the Wi-Fi app's event-driven card shows the fixture connected. The ES3C28P's
+  audio and Wi-Fi drivers are consistent; the owner checklist verifies them.
+- **Scope:** the only simulator-only additions are the F1-F9 navigation aid and the capture hooks;
+  the probe was removed. No firmware feature outside the spec was added.
 
 ## Follow-ups
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #ifdef ESP_PLATFORM
 #include <sdkconfig.h>
 #endif
