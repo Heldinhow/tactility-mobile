@@ -115,7 +115,12 @@ void take_screenshot() {
             fprintf(file, "P6\n%u %u\n255\n", static_cast<unsigned>(snapshot->header.w), static_cast<unsigned>(snapshot->header.h));
             const auto* data = static_cast<const uint8_t*>(snapshot->data);
             for (uint32_t y = 0; y < snapshot->header.h; y++) {
-                fwrite(data + y * snapshot->header.stride, 1, snapshot->header.w * 3, file);
+                const uint8_t* row = data + y * snapshot->header.stride;
+                for (uint32_t x = 0; x < snapshot->header.w; x++) {
+                    // LVGL's RGB888 buffer is BGR; PPM is RGB
+                    const uint8_t pixel[3] = { row[x * 3 + 2], row[x * 3 + 1], row[x * 3] };
+                    fwrite(pixel, 1, 3, file);
+                }
             }
             fclose(file);
         }
