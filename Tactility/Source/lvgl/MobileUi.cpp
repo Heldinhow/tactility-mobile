@@ -72,4 +72,20 @@ lv_obj_t* createButton(lv_obj_t* parent, const char* text, bool primary) {
     return button;
 }
 
+lv_obj_t* createIcon(lv_obj_t* parent, MobileIcon icon, uint32_t tint) {
+    lv_obj_t* image = lv_image_create(parent);
+    lv_image_set_src(image, mobileIconGet(icon));
+    lv_obj_set_style_image_recolor(image, color(tint), LV_STATE_DEFAULT);
+    lv_obj_set_style_image_recolor_opa(image, LV_OPA_COVER, LV_STATE_DEFAULT);
+    return image;
+}
+
+lv_obj_t* createLabel(lv_obj_t* parent, const char* text, LvglFontSize font, uint32_t tint) {
+    lv_obj_t* label = lv_label_create(parent);
+    lv_obj_set_style_text_font(label, lvgl_get_text_font(font), LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(label, color(tint), LV_STATE_DEFAULT);
+    lv_label_set_text(label, text);
+    return label;
+}
+
 } // namespace tt::lvgl::mobile

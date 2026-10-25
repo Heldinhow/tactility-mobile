@@ -44,7 +44,7 @@ ticket; it does not ship in firmware.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Test seam:** None (developer tool). The acceptance is that the simulator renders the real UI at
 240x320 and that the screens can be captured.
@@ -71,7 +71,7 @@ row disappears on v2 builds; non-v2 builds keep the 10–32 scaling path.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Test seam:** No pure seam. Asset audit: the generated font table contains exactly the six roles
 and the clock subset's codepoints. The visual check is the 240x320 simulator from RV2-01.
@@ -104,7 +104,7 @@ at draw time.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Test seam:** Seam 4, app icon table: a pure function from app id to icon, with the eight mockup
 apps, the settings apps, a third-party app and an unknown id.
@@ -136,7 +136,7 @@ density and animations. The vendored theme is not edited.
 
 **Blocked by:** RV2-01, RV2-02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Test seam:** None (visual consistency). Simulator screenshots of Appearance, Display and Files.
 
@@ -163,7 +163,7 @@ the primary/secondary roles, the shared card/row/gesture-bar primitives, the 60%
 
 **Blocked by:** RV2-01, RV2-03, RV2-04.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Test seam:** None (layout). Simulator screenshots of five existing apps plus the v1 Home; device
 spot check.
@@ -194,7 +194,7 @@ show; rows open their targets; Power opens Display. No polling or listeners.
 
 **Blocked by:** RV2-01, RV2-03, RV2-04, RV2-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Test seam:** Seam 2, mobile formatting: a pure module for the five value strings and their
 documented edge cases, unit-tested with doctest.

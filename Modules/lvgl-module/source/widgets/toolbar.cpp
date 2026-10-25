@@ -177,6 +177,11 @@ void lvgl_toolbar_set_nav_action(lv_obj_t* obj, const char* icon, lv_event_cb_t 
     lv_image_set_src(toolbar->close_button_image, icon); // e.g. LV_SYMBOL_CLOSE
 }
 
+void lvgl_toolbar_set_nav_icon(lv_obj_t* obj, const lv_image_dsc_t* image) {
+    auto* toolbar = reinterpret_cast<Toolbar*>(obj);
+    lv_image_set_src(toolbar->close_button_image, image);
+}
+
 void lvgl_toolbar_set_nav_image(lv_obj_t* obj, const lv_image_dsc_t* image, lv_event_cb_t callback, void* user_data) {
     auto* toolbar = reinterpret_cast<Toolbar*>(obj);
     if (toolbar->nav_action_callback != nullptr) {

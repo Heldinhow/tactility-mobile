@@ -51,6 +51,14 @@ void lvgl_toolbar_set_nav_action(lv_obj_t* obj, const char* icon, lv_event_cb_t 
 void lvgl_toolbar_set_nav_image(lv_obj_t* obj, const lv_image_dsc_t* image, lv_event_cb_t callback, void* userData);
 
 /**
+ * Replaces the navigation icon, keeping the action that is already attached to it. For the v2
+ * toolbar, whose design uses an image mask instead of the glyph that create() installs.
+ * @param[in] obj the toolbar instance
+ * @param[in] image the image to set on the button
+ */
+void lvgl_toolbar_set_nav_icon(lv_obj_t* obj, const lv_image_dsc_t* image);
+
+/**
  * Create and add an action button with an image to the toolbar (aligned to the right of the toolbar)
  * @param[in] obj the toolbar instance
  * @param[in] imagePath the path to an image file to shown on the button

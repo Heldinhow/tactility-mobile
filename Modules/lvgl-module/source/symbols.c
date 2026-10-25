@@ -171,6 +171,7 @@ const struct ModuleSymbol lvgl_module_symbols[] = {
     DEFINE_MODULE_SYMBOL(lvgl_toolbar_create),
     DEFINE_MODULE_SYMBOL(lvgl_toolbar_set_title),
     DEFINE_MODULE_SYMBOL(lvgl_toolbar_set_nav_action),
+    DEFINE_MODULE_SYMBOL(lvgl_toolbar_set_nav_icon),
     DEFINE_MODULE_SYMBOL(lvgl_toolbar_add_image_button_action),
     DEFINE_MODULE_SYMBOL(lvgl_toolbar_add_text_button_action),
     DEFINE_MODULE_SYMBOL(lvgl_toolbar_add_switch_action),

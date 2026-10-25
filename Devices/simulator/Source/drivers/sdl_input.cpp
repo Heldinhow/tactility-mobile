@@ -12,7 +12,11 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
+
+// Development aid, see Tactility/Source/lvgl/SimulatorDevNavigation.cpp
+extern void simulatorDevAction(int index);
 
 namespace {
 
@@ -171,6 +175,8 @@ void sdl_input_pump() {
                 case SDL_KEYDOWN:
                     if (event.key.keysym.sym == SDLK_F12) {
                         take_screenshot();
+                    } else if (event.key.keysym.sym >= SDLK_F1 && event.key.keysym.sym <= SDLK_F9) {
+                        simulatorDevAction(static_cast<int>(event.key.keysym.sym - SDLK_F1) + 1);
                     } else {
                         push_key(keycode_to_key(event.key.keysym.sym, (event.key.keysym.mod & KMOD_SHIFT) != 0));
                     }
@@ -200,6 +206,16 @@ void sdl_input_pump() {
 
     if (quit_requested) {
         exit(0);
+    }
+
+    // Development aid: open a screen from TACTILITY_SIM_ACTION (1-9, see simulatorDevAction)
+    static bool dev_action_done = false;
+    if (!dev_action_done) {
+        const char* action = getenv("TACTILITY_SIM_ACTION");
+        if (action != nullptr && SDL_GetTicks() >= 500) {
+            simulatorDevAction(atoi(action));
+            dev_action_done = true;
+        }
     }
 
     // Development aid: capture once after a delay without needing a window or key interaction
