@@ -65,8 +65,14 @@ class DisplayIdleService final : public Service {
 #if defined(CONFIG_TT_MOBILE_HOME)
     LockState lockState = LockState::Unlocked;
     LockWidgets* lockWidgets = nullptr;
+    /** One queued LVGL-task update at a time; it applies whatever lockState is by then */
+    std::atomic<bool> lockUpdatePending{false};
     void handleLockTick(uint32_t inactiveMs);
     void unlock();
+    /** Schedules applyLockUpdate() on the LVGL task: the timer daemon never builds widgets */
+    void scheduleLockUpdate();
+    void applyLockUpdate();
+    static void onLockUpdate(void* context);
     static void onLockUnlockRequested(void* context);
 #endif
 

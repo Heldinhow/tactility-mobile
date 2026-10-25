@@ -165,6 +165,41 @@ void DisplayIdleService::requestUnlock() {
     unlock();
 }
 
+void DisplayIdleService::onLockUpdate(void* context) {
+    auto* self = static_cast<DisplayIdleService*>(context);
+    self->lockUpdatePending.store(false, std::memory_order_release);
+    self->applyLockUpdate();
+}
+
+void DisplayIdleService::scheduleLockUpdate() {
+    if (lockUpdatePending.exchange(true, std::memory_order_acq_rel)) {
+        return;
+    }
+    // Runs in lv_timer_handler(), i.e. on the LVGL task, whose stack owns widget creation
+    lv_async_call(onLockUpdate, this);
+}
+
+void DisplayIdleService::applyLockUpdate() {
+    if (lockState == LockState::LockedOn) {
+        if (!lockScreenIsVisible(lockWidgets)) {
+            lvgl_lock();
+            const bool shown = lockScreenShow(lockWidgets);
+            lvgl_unlock();
+            if (!shown) {
+                // Fail open: never leave the panel on without a visible way to unlock
+                lockState = LockState::Unlocked;
+                setBacklightBrightness(cachedDisplaySettings.backlightDuty);
+                displayDimmed = false;
+                lv_display_trigger_activity(nullptr);
+            }
+        }
+    } else {
+        lvgl_lock();
+        lockScreenHide(lockWidgets);
+        lvgl_unlock();
+    }
+}
+
 void DisplayIdleService::handleLockTick(uint32_t inactive_ms) {
     if (!hasDisplayWithBacklight()) {
         return;
@@ -193,14 +228,9 @@ void DisplayIdleService::handleLockTick(uint32_t inactive_ms) {
     if (effects.hideOverlay) {
         window_manager_overlay_hide();
     }
-    if (effects.hideLock) {
-        lockScreenHide(lockWidgets);
-    }
-    if (effects.showLock && !lockScreenShow(lockWidgets)) {
-        // Fail open: never leave the panel on without a visible way to unlock
-        lockState = LockState::Unlocked;
-        effects.backlightOn = true;
-        effects.backlightOff = false;
+    // The lock widgets are built and destroyed on the LVGL task, not on this timer daemon
+    if (effects.hideLock || effects.showLock) {
+        scheduleLockUpdate();
     }
     if (effects.backlightOn) {
         setBacklightBrightness(cachedDisplaySettings.backlightDuty);
@@ -221,7 +251,7 @@ void DisplayIdleService::unlock() {
     LockEffects effects;
     lockState = nextLockState(lockState, LockEvent::Unlock, effects);
     if (effects.hideLock) {
-        lockScreenHide(lockWidgets);
+        scheduleLockUpdate();
     }
     if (effects.backlightOn) {
         setBacklightBrightness(cachedDisplaySettings.backlightDuty);

@@ -16,6 +16,11 @@ namespace tt {
 
 constexpr auto* TAG = "Tactility";
 
+#if defined(CONFIG_TT_MOBILE_HOME)
+/** Temporary measurement probe, see StackProbe.cpp */
+void startStackProbe();
+#endif
+
 void prepareFileSystems() {
     char temp_path[FILE_MAX_PATH_STRING_LENGTH];
     if (paths_get_temp_path(temp_path, sizeof(temp_path)) != ERROR_NONE) {
@@ -43,6 +48,10 @@ bool init(Module* const dtsModules[], const DtsDevice dtsDevices[]) {
 #endif
 
     startBootApp();
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+    startStackProbe();
+#endif
 
     return true;
 }

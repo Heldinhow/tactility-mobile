@@ -258,7 +258,7 @@ widget creation from the 5,120 B timer daemon stack.
 
 **Blocked by:** RV2-01, RV2-02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Test seam:** No pure seam; the high-water probe of the timer daemon and the LVGL task.
 
