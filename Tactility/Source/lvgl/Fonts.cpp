@@ -5,6 +5,10 @@
 #include <Tactility/lvgl/FontVersions.h>
 #include <Tactility/settings/AppearanceSettings.h>
 
+#ifdef ESP_PLATFORM
+#include <sdkconfig.h>
+#endif
+
 #include <generated_assets.h>
 
 #include <binfont/binfont.h>
@@ -14,6 +18,7 @@
 #include <lvgl/icons/names.h>
 #include <tactility/concurrent/mutex.h>
 #include <tactility/log.h>
+#include <tactility/Memory.hpp>
 #include <tactility/memory.h>
 
 #include <cstdlib>
@@ -66,6 +71,10 @@ constexpr TextFontDefinition TEXT_FONTS[] = {
     { FONT_SIZE_SMALL, "small" },
     { FONT_SIZE_DEFAULT, "default" },
     { FONT_SIZE_LARGE, "large" },
+#if defined(CONFIG_TT_MOBILE_HOME)
+    { FONT_SIZE_SECONDARY, "secondary" },
+    { FONT_SIZE_DENSE, "dense" },
+#endif
 };
 
 static const IconFontDefinition ICON_FONTS[] = {
@@ -144,17 +153,48 @@ static FontSource getSource(const std::string& customPath, const uint8_t* system
 }
 
 static FontSource getTextSource(const FontConfiguration& configuration) {
+#if defined(CONFIG_TT_MOBILE_HOME)
+    // A v2 build ships every text role as a generated bitmap font, so no TTF needs to be embedded
+    // for runtime generation. The generated table is the only source.
+    (void)configuration;
+    return { { "", nullptr, 0 }, TT_TEXT_FONT_VERSION, [] { return std::vector<uint32_t>(); }, false };
+#else
     return getSource(configuration.regularFontPath, asset_fonts_AdwaitaSans_ttf, asset_fonts_AdwaitaSans_ttf_size, TT_TEXT_FONT_VERSION);
+#endif
 }
 
 static FontSource getMonoSource(const FontConfiguration& configuration) {
     return getSource(configuration.monoFontPath, asset_fonts_AdwaitaMono_ttf, asset_fonts_AdwaitaMono_ttf_size, TT_MONO_FONT_VERSION);
 }
 
+#if defined(CONFIG_TT_MOBILE_HOME)
+static std::vector<uint32_t> getClockCodepoints() {
+    static constexpr char GLYPHS[] = "0123456789:- ";
+    std::vector<uint32_t> codepoints;
+    for (const char* glyph = GLYPHS; *glyph != '\0'; glyph++) {
+        codepoints.push_back(static_cast<uint32_t>(static_cast<unsigned char>(*glyph)));
+    }
+    return codepoints;
+}
+#endif
+
 static FontRequest getTextRequest(const FontConfiguration& configuration, const FontSource& source, const TextFontDefinition& definition, uint8_t bpp) {
     const uint16_t size = getTextFontSize(configuration.defaultSize, definition.id);
     return { getCachedFontFileName(TEXT_CACHE_PREFIX, definition.name, size, bpp, source.version), source.ttf, size, bpp, source.getCodepoints };
 }
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+static FontRequest getClockRequest(const FontConfiguration& configuration, const FontSource& source, uint8_t bpp) {
+    const uint16_t size = getClockFontSize(configuration.defaultSize);
+    return {
+        getCachedFontFileName(TEXT_CACHE_PREFIX, "clock", size, bpp, source.version),
+        source.ttf,
+        size,
+        bpp,
+        CodepointProvider(getClockCodepoints)
+    };
+}
+#endif
 
 static FontRequest getMonoRequest(const FontConfiguration& configuration, const FontSource& source, uint8_t bpp) {
     return { getCachedFontFileName(MONO_CACHE_PREFIX, "mono", configuration.defaultSize, bpp, source.version), source.ttf, configuration.defaultSize, bpp, source.getCodepoints };
@@ -221,6 +261,10 @@ static BinFont* load(const FontRequest& request) {
         }
         LOG_E(TAG, "Failed to open %s from the firmware", request.fileName.c_str());
     }
+    if (request.ttf.data == nullptr && request.ttf.path.empty()) {
+        LOG_E(TAG, "%s is not part of the firmware and has no TTF source", request.fileName.c_str());
+        return nullptr;
+    }
     warnWhenInRam(request);
     return loadOrGenerateFont(request.fileName, request.ttf, request.size, request.bpp, request.getCodepoints);
 }
@@ -230,6 +274,10 @@ static bool ensureCached(const FontRequest& request) {
     size_t size = 0;
     if (findGeneratedFont(request.fileName, data, size)) {
         return true;
+    }
+    if (request.ttf.data == nullptr && request.ttf.path.empty()) {
+        LOG_E(TAG, "%s is not part of the firmware and has no TTF source", request.fileName.c_str());
+        return false;
     }
     warnWhenInRam(request);
     return ensureCachedFont(request.fileName, request.ttf, request.size, request.bpp, request.getCodepoints);
@@ -294,6 +342,11 @@ bool updateFontCache(const FontConfiguration& configuration) {
             return false;
         }
     }
+#if defined(CONFIG_TT_MOBILE_HOME)
+    if (!ensureCached(getClockRequest(configuration, text_source, bpp))) {
+        return false;
+    }
+#endif
     for (const auto& definition : ICON_FONTS) {
         if (isIconFontGenerated(definition.id) && !ensureCached(getIconRequest(configuration, definition, bpp))) {
             return false;
@@ -334,6 +387,11 @@ void loadFonts(const FontConfiguration& configuration) {
     if (!isTextFontGenerated(FONT_SIZE_LARGE)) {
         lvgl_set_text_font(FONT_SIZE_LARGE, lvgl_get_text_font(FONT_SIZE_DEFAULT), lvgl_get_text_font_height(FONT_SIZE_DEFAULT));
     }
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+    // Keep the clock font of the current size; older sizes are deleted as stale below
+    text_file_names.push_back(getClockRequest(configuration, text_source, bpp).fileName);
+#endif
 
     std::vector<std::string> icon_file_names;
     for (const auto& definition : ICON_FONTS) {
@@ -377,5 +435,48 @@ BinFont* loadMonoFont() {
     }
     return font;
 }
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+ClockFont* loadClockFont() {
+    const auto configuration = getFontConfiguration();
+    const uint8_t bpp = getGeneratedFontBpp();
+    const auto source = getTextSource(configuration);
+    auto request = getClockRequest(configuration, source, bpp);
+    BinFont* bin_font = load(request);
+    if (bin_font == nullptr && source.custom) {
+        LOG_W(TAG, "Falling back to the system clock font");
+        request = getClockRequest(configuration, getSystemSource(asset_fonts_AdwaitaSans_ttf, asset_fonts_AdwaitaSans_ttf_size, TT_TEXT_FONT_VERSION), bpp);
+        bin_font = load(request);
+    }
+    if (bin_font == nullptr) {
+        return nullptr;
+    }
+
+    lv_font_t* lvgl_font = lvgl_binfont_create(bin_font);
+    if (lvgl_font == nullptr) {
+        binfont_close(bin_font);
+        return nullptr;
+    }
+
+    auto* font = tt::newObject<ClockFont>();
+    if (font == nullptr) {
+        lvgl_binfont_destroy(lvgl_font);
+        binfont_close(bin_font);
+        return nullptr;
+    }
+    font->binFont = bin_font;
+    font->lvglFont = lvgl_font;
+    return font;
+}
+
+void destroyClockFont(ClockFont* font) {
+    if (font == nullptr) {
+        return;
+    }
+    lvgl_binfont_destroy(font->lvglFont);
+    binfont_close(font->binFont);
+    tt::deleteObject(font);
+}
+#endif
 
 }

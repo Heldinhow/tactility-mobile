@@ -5,6 +5,10 @@
 #include <Tactility/settings/DisplaySettings.h>
 #include <Tactility/Timer.h>
 
+#if defined(CONFIG_TT_MOBILE_HOME)
+#include <Tactility/service/displayidle/LockState.h>
+#endif
+
 #include <sdkconfig.h>
 
 #include <atomic>
@@ -17,6 +21,10 @@ typedef _lv_event_t lv_event_t;
 namespace tt::service::displayidle {
 
 class Screensaver;
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+struct LockWidgets;
+#endif
 
 class DisplayIdleService final : public Service {
 
@@ -54,9 +62,32 @@ class DisplayIdleService final : public Service {
 
     void tick();
 
+#if defined(CONFIG_TT_MOBILE_HOME)
+    LockState lockState = LockState::Unlocked;
+    LockWidgets* lockWidgets = nullptr;
+    /** One queued LVGL-task update at a time; it applies whatever lockState is by then */
+    std::atomic<bool> lockUpdatePending{false};
+    void handleLockTick(uint32_t inactiveMs);
+    void unlock();
+    /** Schedules applyLockUpdate() on the LVGL task: the timer daemon never builds widgets */
+    void scheduleLockUpdate();
+    void applyLockUpdate();
+    static void onLockUpdate(void* context);
+    static void onLockUnlockRequested(void* context);
+#endif
+
 public:
     bool onStart(ServiceContext& service) override;
     void onStop(ServiceContext& service) override;
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+    /** @return true while the screensaver type is Lock and the display is locked (on or off) */
+    bool isLocked() const;
+    /** @return true while the lock overlay is on screen */
+    bool isLockScreenVisible() const;
+    /** Asks the lock to unlock, e.g. from the system gesture layer. */
+    void requestUnlock();
+#endif
 
     /**
      * Force the screensaver to start immediately, regardless of idle timeout.

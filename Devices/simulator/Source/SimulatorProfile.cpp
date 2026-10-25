@@ -31,6 +31,8 @@ static const Profile PROFILES[PROFILE_COUNT] = {
     { "LilyGO T-Deck", 320, 240, false, false, false, true, true },
     { "LilyGO T-Lora Pager", 480, 222, false, false, false, true, false },
     { "M5Stack Cardputer", 240, 135, false, true, false, true, false },
+    // The mobile redesign target: 240x320 portrait, touch, no hardware keyboard
+    { "ES3C28P", 240, 320, true, false, false, false, true },
     // Half the res on each axis to compensate for DPI differences
     { "M5Stack Tab5", 640, 360, true, false, false, true, true },
 };

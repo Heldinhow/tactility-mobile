@@ -12,6 +12,10 @@
 #include <string>
 #include <utility>
 
+#ifdef ESP_PLATFORM
+#include <sdkconfig.h>
+#endif
+
 namespace tt::settings::display {
 
 static std::string getSettingsFilePath() {
@@ -92,6 +96,8 @@ static std::string toString(ScreensaverType type) {
             return "MatrixRain";
         case StackChan:
             return "StackChan";
+        case Lock:
+            return "Lock";
         default:
             std::unreachable();
     }
@@ -112,6 +118,9 @@ static bool fromString(const std::string& str, ScreensaverType& type) {
         return true;
     } else if (str == "StackChan") {
         type = ScreensaverType::StackChan;
+        return true;
+    } else if (str == "Lock") {
+        type = ScreensaverType::Lock;
         return true;
     } else {
         return false;
@@ -167,6 +176,12 @@ bool load(DisplaySettings& settings) {
     if (screensaver_entry != map.end()) {
         fromString(screensaver_entry->second, screensaver_type);
     }
+#if !defined(CONFIG_TT_MOBILE_HOME)
+    // A settings file written by a mobile-home build must not strand this build on a type it lacks
+    if (screensaver_type == ScreensaverType::Lock) {
+        screensaver_type = ScreensaverType::BouncingBalls;
+    }
+#endif
 
     bool auto_rotate_enabled = false;
     auto auto_rotate_enabled_entry = map.find(SETTINGS_KEY_AUTO_ROTATE_ENABLED);
@@ -190,9 +205,16 @@ DisplaySettings getDefault() {
         .orientation = getDefaultOrientation(),
         .gammaCurve = 1,
         .backlightDuty = 200,
+#if defined(CONFIG_TT_MOBILE_HOME)
+        // The Home targets phone behaviour: lock the display after a short idle
+        .backlightTimeoutEnabled = true,
+        .backlightTimeoutMs = 30000,
+        .screensaverType = ScreensaverType::Lock,
+#else
         .backlightTimeoutEnabled = false,
         .backlightTimeoutMs = 60000,
         .screensaverType = ScreensaverType::BouncingBalls,
+#endif
         .autoRotateEnabled = false
     };
 }

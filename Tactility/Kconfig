@@ -100,6 +100,14 @@ menu "Tactility App"
             right from the left edge closes the topmost app. Devices without a pointer input device
             ignore this at runtime, so keypad/encoder-only devices are unaffected. Disable it to
             leave the code out of the firmware entirely.
+    config TT_MOBILE_HOME
+        bool "Phone-style Home and lock screen"
+        default n
+        depends on TT_SYSTEM_GESTURES
+        help
+            Replaces the launcher UI with a Home screen (clock, app grid and dock) and adds the
+            Lock screensaver type. The quick-panel volume control is independent of this option.
+            Devices without a display, or that prefer the original launcher, can leave it off.
     config TT_DISPLAY_IDLE_TICK_MS
         int "Display idle tick interval (ms)"
         default 50

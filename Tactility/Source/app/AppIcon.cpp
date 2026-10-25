@@ -2,6 +2,10 @@
 
 #include <lvgl/icons/shared.h>
 
+#ifdef ESP_PLATFORM
+#include <sdkconfig.h>
+#endif
+
 #include <cstring>
 
 namespace tt::app {
@@ -24,6 +28,9 @@ constexpr IconEntry ICONS[] = {
     {"tactility.launcher",          LVGL_ICON_SHARED_APPS},
     {"tactility.meshchannels",      LVGL_ICON_SHARED_FORUM},
     {"tactility.meshcontacts",      LVGL_ICON_SHARED_FORUM},
+#if defined(CONFIG_TT_MOBILE_HOME)
+    {"one.grokbot.carousel",        LVGL_ICON_SHARED_FORUM},
+#endif
     {"tactility.notes",             LVGL_ICON_SHARED_EDIT_NOTE},
     {"tactility.systeminfo",        LVGL_ICON_SHARED_DEVICES},
     {"tactility.terminal",          LVGL_ICON_SHARED_TERMINAL},

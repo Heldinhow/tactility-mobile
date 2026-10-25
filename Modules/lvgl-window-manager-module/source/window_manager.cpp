@@ -16,6 +16,10 @@
 #include <new>
 #include <vector>
 
+#ifdef ESP_PLATFORM
+#include <sdkconfig.h>
+#endif
+
 constexpr auto* TAG = "window_manager";
 
 namespace {
@@ -725,7 +729,12 @@ error_t window_manager_overlay_show(WindowCreateWidgetsFn create_widgets, Window
     // Monochrome displays can't dim the app layer, so the overlay draws over it as-is
     const bool monochrome = lv_display_get_color_format(lv_obj_get_display(root)) == LV_COLOR_FORMAT_I1;
     lv_obj_set_style_bg_color(widget, lv_color_black(), LV_STATE_DEFAULT);
+#if defined(CONFIG_TT_MOBILE_HOME)
+    // The v2 design uses a 60% scrim (153/255) for the panel, Recents and dialogs
+    lv_obj_set_style_bg_opa(widget, monochrome ? LV_OPA_TRANSP : static_cast<lv_opa_t>(153), LV_STATE_DEFAULT);
+#else
     lv_obj_set_style_bg_opa(widget, monochrome ? LV_OPA_TRANSP : LV_OPA_50, LV_STATE_DEFAULT);
+#endif
     lv_obj_set_scrollable(widget, false);
     lv_obj_add_event_cb(widget, on_overlay_backdrop_clicked, LV_EVENT_CLICKED, nullptr);
     lv_obj_add_event_cb(widget, on_overlay_widget_deleted, LV_EVENT_DELETE, nullptr);

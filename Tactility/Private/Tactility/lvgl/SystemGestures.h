@@ -2,10 +2,18 @@
 
 #include <stdint.h>
 
+#ifdef ESP_PLATFORM
+#include <sdkconfig.h>
+#endif
+
 namespace tt::lvgl {
 
 /** The width of the strip along an edge in which a drag belongs to the system instead of the app. */
+#if defined(CONFIG_TT_MOBILE_HOME)
+constexpr int32_t SYSTEM_GESTURE_EDGE_SIZE = 16;
+#else
 constexpr int32_t SYSTEM_GESTURE_EDGE_SIZE = 20;
+#endif
 /** The minimum travel for a drag that starts in an edge strip to count as a swipe. */
 constexpr int32_t SYSTEM_GESTURE_SWIPE_DISTANCE = 40;
 

@@ -90,7 +90,7 @@ def get_device_settings(device_folder: str, simulator: bool) -> tuple:
     return font_size, bpp
 
 
-def get_jobs(font_size: int, bpp: int) -> list:
+def get_jobs(font_size: int, bpp: int, mobile_home: bool) -> list:
     """@return a list of (file name, ttf file, size, codepoints or None)"""
     text_version = get_defines(os.path.join(ROOT, "Tactility", "Private", "Tactility", "lvgl", "FontVersions.h"))
     icon_version = get_defines(os.path.join(ROOT, "Modules", "lvgl-module", "include", "lvgl", "icons", "names.h"))["LVGL_ICON_FONT_VERSION"]
@@ -100,10 +100,29 @@ def get_jobs(font_size: int, bpp: int) -> list:
         return f"{prefix}{name}_{size}_{bpp}bpp_{version:08x}.bin"
 
     jobs = []
-    sans = os.path.join(FONTS, "AdwaitaSans.ttf")
-    text_fonts = [("small", scale(font_size, 0.75)), ("default", font_size), ("large", scale(font_size, 1.25))]
-    for name, size in text_fonts:
-        jobs.append((file_name("text_", name, size, text_version["TT_TEXT_FONT_VERSION"]), sans, size, None))
+    version = text_version["TT_TEXT_FONT_VERSION"]
+    if mobile_home:
+        # v2 type scale: fixed sizes, Inter 400 for the 12px caption and Inter 500 for the rest.
+        # The subsets are build inputs in Tactility/Fonts, not runtime assets.
+        inter = os.path.join(ROOT, "Tactility", "Fonts")
+        text_fonts = [
+            ("small", 12, "Inter-Regular-Ascii.ttf"),
+            ("secondary", 13, "Inter-Medium-Ascii.ttf"),
+            ("dense", 14, "Inter-Medium-Ascii.ttf"),
+            ("default", 15, "Inter-Medium-Latin1.ttf"),
+            ("large", 22, "Inter-Medium-Ascii.ttf"),
+        ]
+        for name, size, ttf in text_fonts:
+            jobs.append((file_name("text_", name, size, version), os.path.join(inter, ttf), size, None))
+        # The Home and lock clocks only need digits and separators, so this stays small
+        clock_size = 48
+        clock_codepoints = [ord(glyph) for glyph in "0123456789:- "]
+        jobs.append((file_name("text_", "clock", clock_size, version), os.path.join(inter, "Inter-Medium-Clock.ttf"), clock_size, clock_codepoints))
+    else:
+        sans = os.path.join(FONTS, "AdwaitaSans.ttf")
+        text_fonts = [("small", scale(font_size, 0.75)), ("default", font_size), ("large", scale(font_size, 1.25))]
+        for name, size in text_fonts:
+            jobs.append((file_name("text_", name, size, version), sans, size, None))
     jobs.append((file_name("mono_", "mono", font_size, text_version["TT_MONO_FONT_VERSION"]), os.path.join(FONTS, "AdwaitaMono.ttf"), font_size, None))
 
     shared_size = scale_double(font_size, 1.25)
@@ -154,7 +173,9 @@ def main():
     os.makedirs(output_folder, exist_ok=True)
 
     font_size, bpp = get_device_settings(device_folder, simulator)
-    jobs = get_jobs(font_size, bpp)
+    properties = read_properties(os.path.join(device_folder, "device.properties"))
+    mobile_home = properties.get("sdkconfig.CONFIG_TT_MOBILE_HOME") == "y"
+    jobs = get_jobs(font_size, bpp, mobile_home)
 
     fonts = []
     with tempfile.TemporaryDirectory() as work_folder:

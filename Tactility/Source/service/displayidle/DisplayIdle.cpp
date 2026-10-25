@@ -19,6 +19,11 @@
 #include <tactility/drivers/backlight.h>
 
 #include <lvgl/lvgl.h>
+#include <lvgl_window_manager/window_manager.h>
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+#include <Tactility/service/displayidle/LockScreen.h>
+#endif
 
 namespace tt::service::displayidle {
 
@@ -147,6 +152,121 @@ void DisplayIdleService::updateScreensaver() {
     }
 }
 
+#if defined(CONFIG_TT_MOBILE_HOME)
+bool DisplayIdleService::isLocked() const {
+    return lockState != LockState::Unlocked;
+}
+
+bool DisplayIdleService::isLockScreenVisible() const {
+    return lockScreenIsVisible(lockWidgets);
+}
+
+void DisplayIdleService::requestUnlock() {
+    unlock();
+}
+
+void DisplayIdleService::onLockUpdate(void* context) {
+    auto* self = static_cast<DisplayIdleService*>(context);
+    self->lockUpdatePending.store(false, std::memory_order_release);
+    self->applyLockUpdate();
+}
+
+void DisplayIdleService::scheduleLockUpdate() {
+    if (lockUpdatePending.exchange(true, std::memory_order_acq_rel)) {
+        return;
+    }
+    // Runs in lv_timer_handler(), i.e. on the LVGL task, whose stack owns widget creation
+    lv_async_call(onLockUpdate, this);
+}
+
+void DisplayIdleService::applyLockUpdate() {
+    if (lockState == LockState::LockedOn) {
+        if (!lockScreenIsVisible(lockWidgets)) {
+            lvgl_lock();
+            const bool shown = lockScreenShow(lockWidgets);
+            lvgl_unlock();
+            if (!shown) {
+                // Fail open: never leave the panel on without a visible way to unlock
+                lockState = LockState::Unlocked;
+                setBacklightBrightness(cachedDisplaySettings.backlightDuty);
+                displayDimmed = false;
+                lv_display_trigger_activity(nullptr);
+            }
+        }
+    } else {
+        lvgl_lock();
+        lockScreenHide(lockWidgets);
+        lvgl_unlock();
+    }
+}
+
+void DisplayIdleService::handleLockTick(uint32_t inactive_ms) {
+    if (!hasDisplayWithBacklight()) {
+        return;
+    }
+
+    const bool timeout_enabled = cachedDisplaySettings.backlightTimeoutEnabled && cachedDisplaySettings.backlightTimeoutMs > 0;
+    LockEvent event = LockEvent::Timeout;
+    if (!timeout_enabled) {
+        if (lockState == LockState::Unlocked) {
+            return;
+        }
+        event = LockEvent::Unlock;
+    } else if (lockState == LockState::Unlocked && inactive_ms >= cachedDisplaySettings.backlightTimeoutMs) {
+        event = LockEvent::Timeout;
+    } else if (lockState == LockState::LockedOff && inactive_ms < kWakeActivityThresholdMs) {
+        event = LockEvent::Activity;
+    } else if (lockState == LockState::LockedOn && inactive_ms >= cachedDisplaySettings.backlightTimeoutMs) {
+        event = LockEvent::Timeout;
+    } else {
+        return;
+    }
+
+    LockEffects effects;
+    lockState = nextLockState(lockState, event, effects);
+
+    if (effects.hideOverlay) {
+        window_manager_overlay_hide();
+    }
+    // The lock widgets are built and destroyed on the LVGL task, not on this timer daemon
+    if (effects.hideLock || effects.showLock) {
+        scheduleLockUpdate();
+    }
+    if (effects.backlightOn) {
+        setBacklightBrightness(cachedDisplaySettings.backlightDuty);
+    } else if (effects.backlightOff) {
+        setBacklightBrightness(0);
+    }
+    if (effects.resetActivity) {
+        lv_display_trigger_activity(nullptr);
+    }
+    displayDimmed = effects.backlightOff;
+}
+
+void DisplayIdleService::unlock() {
+    if (lockState != LockState::LockedOn) {
+        return;
+    }
+
+    LockEffects effects;
+    lockState = nextLockState(lockState, LockEvent::Unlock, effects);
+    if (effects.hideLock) {
+        scheduleLockUpdate();
+    }
+    if (effects.backlightOn) {
+        setBacklightBrightness(cachedDisplaySettings.backlightDuty);
+    }
+    if (effects.resetActivity) {
+        lv_display_trigger_activity(nullptr);
+    }
+    displayDimmed = false;
+}
+
+void DisplayIdleService::onLockUnlockRequested(void* context) {
+    static_cast<DisplayIdleService*>(context)->unlock();
+}
+#endif
+
 void DisplayIdleService::tick() {
     if (!lvgl_try_lock(100)) {
         return;
@@ -164,6 +284,14 @@ void DisplayIdleService::tick() {
     uint32_t inactive_ms = 0;
 
     inactive_ms = lv_display_get_inactive_time(nullptr);
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+    if (cachedDisplaySettings.screensaverType == settings::display::ScreensaverType::Lock) {
+        handleLockTick(inactive_ms);
+        lvgl_unlock();
+        return;
+    }
+#endif
 
     // Only update if not stopping (prevents lag on touch)
     if (displayDimmed && screensaverOverlay && !stopScreensaverRequested.load(std::memory_order_acquire)) {
@@ -226,6 +354,12 @@ bool DisplayIdleService::onStart(ServiceContext& service) {
     timer = std::make_unique<Timer>(Timer::Type::Periodic, millis_to_ticks(TICK_INTERVAL_MS), [this]{ this->tick(); });
     timer->setCallbackPriority(Thread::Priority::Lower);
     timer->start();
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+    lockState = LockState::Unlocked;
+    lockScreenSetUnlockCallback(lockWidgets, &DisplayIdleService::onLockUnlockRequested, this);
+#endif
+
     return true;
 }
 
@@ -234,6 +368,20 @@ void DisplayIdleService::onStop(ServiceContext& service) {
         timer->stop();
         timer = nullptr;
     }
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+    // The lock widgets may still be on screen if the service was stopped while locked
+    for (int attempt = 0; attempt < 5 && lockWidgets != nullptr; attempt++) {
+        if (lvgl_try_lock(100)) {
+            lockScreenHide(lockWidgets);
+            lvgl_unlock();
+            break;
+        }
+        delay_millis(50);
+    }
+    lockScreenSetUnlockCallback(lockWidgets, nullptr, nullptr);
+    lockState = LockState::Unlocked;
+#endif
     if (screensaverOverlay) {
         // Retry screensaver cleanup during shutdown
         constexpr int maxRetries = 5;

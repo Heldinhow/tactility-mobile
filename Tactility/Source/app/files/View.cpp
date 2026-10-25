@@ -14,6 +14,10 @@
 #include <lvgl/widgets/toolbar.h>
 
 #include <Tactility/app/files/SupportedFiles.h>
+#include <Tactility/lvgl/MobileFormat.h>
+#include <Tactility/lvgl/MobileIcons.h>
+#include <Tactility/lvgl/MobileTheme.h>
+#include <Tactility/lvgl/MobileUi.h>
 #include <Tactility/app/files/View.h>
 #include <Tactility/app/alertdialog/AlertDialog.h>
 #include <Tactility/app/imageviewer/ImageViewer.h>
@@ -36,9 +40,249 @@
 #include <unistd.h>
 #include <vector>
 
+#include <dirent.h>
+#include <sys/stat.h>
+
 namespace tt::app::files {
 
 constexpr auto* TAG = "Files";
+
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+
+namespace mobile = tt::lvgl::mobile;
+
+static void onOverflowPressedCallback(lv_event_t* event);
+static void onOverlayKeyCallback(lv_event_t* event);
+
+namespace {
+
+constexpr int32_t MOBILE_LIST_TOP = 72;
+constexpr int32_t MOBILE_LIST_HEIGHT = 192;
+constexpr int32_t MOBILE_ROW_HEIGHT = 44;
+constexpr int32_t MOBILE_FOOTER_TOP = 264;
+constexpr int32_t MOBILE_TEXT_LEFT = 52;
+
+struct MobileRow {
+    View* view;
+    std::string name;
+};
+
+size_t countDirectoryItems(const std::string& path) {
+    DIR* dir = opendir(path.c_str());
+    if (dir == nullptr) {
+        return 0;
+    }
+    size_t count = 0;
+    while (dirent* entry = readdir(dir)) {
+        if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+            count++;
+        }
+    }
+    closedir(dir);
+    return count;
+}
+
+bool isDirectoryEntry(const dirent& entry) {
+    return entry.d_type == file::TT_DT_DIR || entry.d_type == file::TT_DT_CHR;
+}
+
+}
+
+void View::onToolbarBackCallback(lv_event_t* event) {
+    auto* view = static_cast<View*>(lv_event_get_user_data(event));
+    if (view->state->getCurrentPath() == "/") {
+        view->onBackPressed();
+    } else {
+        view->onNavigateUpPressed();
+    }
+}
+
+void View::onMobileRowEvent(lv_event_t* event) {
+    auto* row = static_cast<MobileRow*>(lv_event_get_user_data(event));
+    switch (lv_event_get_code(event)) {
+        case LV_EVENT_SHORT_CLICKED:
+            row->view->onDirEntryPressed(row->name);
+            break;
+        case LV_EVENT_LONG_PRESSED:
+            row->view->onDirEntryLongPressed(row->name);
+            break;
+        case LV_EVENT_KEY:
+            row->view->onDirEntryKeyPressed(row->name, lv_event_get_key(event));
+            break;
+        default:
+            break;
+    }
+}
+
+void View::onMobileRowDeleted(lv_event_t* event) {
+    delete static_cast<MobileRow*>(lv_event_get_user_data(event));
+}
+
+void View::initMobile(uint32_t newAppInstanceId, lv_obj_t* parent) {
+    appInstanceId = newAppInstanceId;
+    mobileMode = true;
+
+    lv_obj_set_scrollable(parent, false);
+    lv_obj_set_style_bg_color(parent, mobile::color(mobile::COLOR_BG), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, LV_STATE_DEFAULT);
+
+    lv_obj_t* toolbar = lvgl_toolbar_create(parent, "Files");
+    lvgl_toolbar_set_nav_action(toolbar, LV_SYMBOL_LEFT, onToolbarBackCallback, this);
+    lvgl_toolbar_set_nav_icon(toolbar, mobileIconGet(MobileIcon::Back));
+    lv_obj_align(toolbar, LV_ALIGN_TOP_MID, 0, 0);
+
+    // The toolbar has no image-descriptor action, so the 44x44 menu target is added by hand
+    mobile_menu_button = lv_obj_create(toolbar);
+    lv_obj_remove_style_all(mobile_menu_button);
+    lv_obj_set_size(mobile_menu_button, 44, 44);
+    lv_obj_set_clickable(mobile_menu_button, true);
+    lv_obj_set_scrollable(mobile_menu_button, false);
+    lv_obj_add_event_cb(mobile_menu_button, onOverflowPressedCallback, LV_EVENT_SHORT_CLICKED, this);
+    lv_obj_t* more = mobile::createIcon(mobile_menu_button, MobileIcon::More, mobile::COLOR_TEXT);
+    lv_obj_center(more);
+
+    mobile_path_label = mobile::createLabel(parent, state->getCurrentPath().c_str(), FONT_SIZE_SECONDARY, mobile::COLOR_TEXT_2);
+    lv_obj_set_size(mobile_path_label, 216, 16);
+    lv_obj_set_pos(mobile_path_label, 16, 52);
+    lv_label_set_long_mode(mobile_path_label, LV_LABEL_LONG_MODE_DOTS);
+
+    mobile_list = lv_obj_create(parent);
+    lv_obj_remove_style_all(mobile_list);
+    lv_obj_set_pos(mobile_list, 0, MOBILE_LIST_TOP);
+    lv_obj_set_size(mobile_list, 240, MOBILE_LIST_HEIGHT);
+    lv_obj_set_clickable(mobile_list, false);
+    lv_obj_set_scroll_dir(mobile_list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(mobile_list, LV_SCROLLBAR_MODE_ACTIVE);
+    lv_obj_set_style_width(mobile_list, 2, LV_PART_SCROLLBAR);
+    lv_obj_set_style_radius(mobile_list, 1, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_color(mobile_list, mobile::color(mobile::COLOR_TEXT_3), LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(mobile_list, LV_OPA_COVER, LV_PART_SCROLLBAR);
+    lv_obj_set_flex_flow(mobile_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(mobile_list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_all(mobile_list, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_row(mobile_list, 0, LV_STATE_DEFAULT);
+    lvgl_grid_navigation_add(mobile_list);
+
+    lv_obj_t* footer = lv_obj_create(parent);
+    lv_obj_remove_style_all(footer);
+    lv_obj_set_pos(footer, 0, MOBILE_FOOTER_TOP);
+    lv_obj_set_size(footer, 240, 32);
+    lv_obj_set_style_border_width(footer, 1, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_side(footer, LV_BORDER_SIDE_TOP, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_color(footer, mobile::color(mobile::COLOR_LINE), LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(footer, 0, LV_STATE_DEFAULT);
+    lv_obj_set_scrollable(footer, false);
+    mobile_footer_label = mobile::createLabel(footer, "", FONT_SIZE_SMALL, mobile::COLOR_TEXT_2);
+    lv_obj_set_width(mobile_footer_label, 240);
+    lv_obj_set_style_text_align(mobile_footer_label, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
+    lv_obj_center(mobile_footer_label);
+
+    // The floating action row is still the menu: the mockup only styles the screen, not the menu
+    overlay = lvgl_card_create(parent);
+    lv_obj_set_floating(overlay, true);
+    lv_obj_set_size(overlay, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(overlay, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(overlay, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_scrollable(overlay, false);
+    lvgl_obj_add_edge_padding(overlay);
+    lvgl_grid_navigation_add(overlay);
+    lv_obj_add_event_cb(overlay, onOverlayKeyCallback, LV_EVENT_KEY, this);
+    lv_obj_set_hidden(overlay, true);
+
+    updateMobile();
+}
+
+void View::updateMobile() {
+    if (mobile_list == nullptr) {
+        return;
+    }
+    lv_obj_clean(mobile_list);
+    lv_label_set_text(mobile_path_label, state->getCurrentPath().c_str());
+
+    size_t item_count = 0;
+    size_t folder_count = 0;
+    state->withEntries([&](const std::vector<dirent>& entries) {
+        item_count = entries.size();
+        for (const auto& entry : entries) {
+            if (isDirectoryEntry(entry)) {
+                folder_count++;
+            }
+        }
+
+        for (const auto& entry : entries) {
+            const std::string path = file::getChildPath(state->getCurrentPath(), entry.d_name);
+            const bool is_directory = isDirectoryEntry(entry);
+
+            lv_obj_t* row = lv_obj_create(mobile_list);
+            lv_obj_remove_style_all(row);
+            lv_obj_set_size(row, LV_PCT(100), MOBILE_ROW_HEIGHT);
+            lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, LV_STATE_DEFAULT);
+            lv_obj_set_style_bg_color(row, mobile::color(mobile::COLOR_SURFACE_2), LV_STATE_PRESSED);
+            lv_obj_set_style_bg_opa(row, LV_OPA_COVER, LV_STATE_PRESSED);
+            lv_obj_set_style_outline_width(row, 2, LV_STATE_FOCUS_KEY);
+            lv_obj_set_style_outline_color(row, mobile::color(mobile::COLOR_ACCENT), LV_STATE_FOCUS_KEY);
+            lv_obj_set_style_outline_pad(row, -2, LV_STATE_FOCUS_KEY);
+            lv_obj_set_clickable(row, true);
+            lv_obj_set_scrollable(row, false);
+
+            lv_obj_t* icon = mobile::createIcon(row, is_directory ? MobileIcon::Folder : MobileIcon::File, mobile::COLOR_TEXT);
+            lv_obj_align(icon, LV_ALIGN_LEFT_MID, 16, 0);
+
+            lv_obj_t* name = mobile::createLabel(row, entry.d_name, FONT_SIZE_DEFAULT, mobile::COLOR_TEXT);
+            lv_obj_set_size(name, 112, 20);
+            lv_obj_set_pos(name, MOBILE_TEXT_LEFT, 12);
+            lv_label_set_long_mode(name, LV_LABEL_LONG_MODE_DOTS);
+
+            std::string meta;
+            if (is_directory) {
+                meta = mobile::formatItemCount(countDirectoryItems(path));
+            } else {
+                struct stat file_stat {};
+                if (::stat(path.c_str(), &file_stat) == 0) {
+                    meta = mobile::formatFileSize(static_cast<uint64_t>(file_stat.st_size));
+                }
+            }
+            lv_obj_t* meta_label = mobile::createLabel(row, meta.c_str(), FONT_SIZE_SECONDARY, mobile::COLOR_TEXT_3);
+            lv_obj_set_size(meta_label, 64, 16);
+            lv_obj_set_style_text_align(meta_label, LV_TEXT_ALIGN_RIGHT, LV_STATE_DEFAULT);
+            lv_obj_align(meta_label, LV_ALIGN_RIGHT_MID, -12, 0);
+
+            lv_obj_t* divider = lv_obj_create(row);
+            lv_obj_remove_style_all(divider);
+            lv_obj_set_size(divider, 240 - MOBILE_TEXT_LEFT, 1);
+            lv_obj_set_pos(divider, MOBILE_TEXT_LEFT, MOBILE_ROW_HEIGHT - 1);
+            lv_obj_set_style_bg_color(divider, mobile::color(mobile::COLOR_LINE_SOFT), LV_STATE_DEFAULT);
+            lv_obj_set_style_bg_opa(divider, LV_OPA_COVER, LV_STATE_DEFAULT);
+            lv_obj_set_clickable(divider, false);
+
+            lv_group_t* group = lv_group_get_default();
+            if (group != nullptr) {
+                lv_group_add_obj(group, row);
+            }
+
+            auto* row_data = new MobileRow { this, entry.d_name };
+            lv_obj_add_event_cb(row, onMobileRowEvent, LV_EVENT_SHORT_CLICKED, row_data);
+            lv_obj_add_event_cb(row, onMobileRowEvent, LV_EVENT_LONG_PRESSED, row_data);
+            lv_obj_add_event_cb(row, onMobileRowEvent, LV_EVENT_KEY, row_data);
+            lv_obj_add_event_cb(row, onMobileRowDeleted, LV_EVENT_DELETE, row_data);
+        }
+    });
+
+    lv_label_set_text(mobile_footer_label, mobile::formatFolderFooter(item_count, folder_count).c_str());
+
+    const bool is_root = state->getCurrentPath() == "/";
+    lv_obj_set_hidden(mobile_menu_button, is_root);
+
+    if (item_count == 0) {
+        lv_obj_t* empty = mobile::createLabel(mobile_list, "This folder is empty", FONT_SIZE_DEFAULT, mobile::COLOR_TEXT_2);
+        lv_obj_set_width(empty, 240);
+        lv_obj_set_style_text_align(empty, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
+        lv_obj_align(empty, LV_ALIGN_TOP_MID, 0, (MOBILE_LIST_HEIGHT - 20) / 2);
+    }
+}
+
+#endif
 
 // region Callbacks
 
@@ -361,7 +605,7 @@ void View::onDirEntryLongPressed(const std::string& name) {
 
     LOG_I(TAG, "Long-pressed %s %d", dir_entry.d_name, (int)dir_entry.d_type);
     state->setSelectedChildEntry(dir_entry.d_name);
-    lv_obj_t* tile = grid.findTile(name);
+    lv_obj_t* tile = mobileMode ? nullptr : grid.findTile(name);
 
     if (state->getCurrentPath() == "/") {
         // At root, only USB mount points support actions (eject).
@@ -619,6 +863,13 @@ void View::update(bool firstPage) {
         return;
     }
 
+#if defined(CONFIG_TT_MOBILE_HOME)
+    if (mobileMode) {
+        updateMobile();
+        lvgl_unlock();
+        return;
+    }
+#endif
     const bool is_root = (state->getCurrentPath() == "/");
     lv_obj_set_hidden(navigate_up_button, is_root);
     lv_obj_set_hidden(overflow_button, is_root);
@@ -632,6 +883,10 @@ void View::update(bool firstPage) {
 }
 
 void View::init(uint32_t appInstanceId, lv_obj_t* parent) {
+#if defined(CONFIG_TT_MOBILE_HOME)
+    initMobile(appInstanceId, parent);
+    return;
+#else
     this->appInstanceId = appInstanceId;
 
     lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
@@ -665,6 +920,7 @@ void View::init(uint32_t appInstanceId, lv_obj_t* parent) {
     lvgl_grid_navigation_add(overlay);
     lv_obj_add_event_cb(overlay, onOverlayKeyCallback, LV_EVENT_KEY, this);
     lv_obj_set_hidden(overlay, true);
+#endif
 }
 
 void View::onNavigate() {

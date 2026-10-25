@@ -12,8 +12,12 @@
 #include <tactility/log.h>
 #include <tactility/memory.h>
 
+#include <Tactility/lvgl/MobileTheme.h>
+#include <Tactility/lvgl/MobileUi.h>
+
 #include <lvgl.h>
 #include <lvgl/devices/indev.h>
+#include <lvgl/theme.h>
 #include <lvgl/widgets/toolbar.h>
 
 namespace tt::app::alertdialog {
@@ -39,6 +43,10 @@ struct Context {
     // the emit/await pair between the two already establishes happens-before ordering, same as
     // every other cross-thread Context field write in this codebase's converted apps.
     int32_t result = 1; // Cancelled - safety-net default if closed without pressing a button
+#if defined(CONFIG_TT_MOBILE_HOME)
+    bool result_set = false;
+    bool overlay_shown = false;
+#endif
 };
 
 struct ButtonContext {
@@ -68,7 +76,7 @@ lv_obj_t* createButton(Context* ctx, lv_obj_t* parent, const std::string& text, 
     return button;
 }
 
-void createWidgets(lv_obj_t* parent, void* userData) {
+void createLegacyWidgets(lv_obj_t* parent, void* userData) {
     auto* ctx = static_cast<Context*>(userData);
     // argv layout: [0]=title, [1]=message, [2..argc)=button labels.
     int argc = ctx->argc;
@@ -109,6 +117,98 @@ void createWidgets(lv_obj_t* parent, void* userData) {
     }
 }
 
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+
+namespace mobile = tt::lvgl::mobile;
+
+/** The dialog runs as an overlay, so the caller's window stays live behind the scrim. */
+void onDialogButtonPressed(lv_event_t* event) {
+    auto* button_ctx = static_cast<ButtonContext*>(lv_event_get_user_data(event));
+    button_ctx->ctx->result = button_ctx->index;
+    button_ctx->ctx->result_set = true;
+    window_manager_overlay_hide();
+    app_event_emit_close(button_ctx->ctx->appInstanceId);
+}
+
+void destroyMobileWidgets(void* user_data) {
+    auto* ctx = static_cast<Context*>(user_data);
+    ctx->overlay_shown = false;
+    if (!ctx->result_set) {
+        // Dismissed by a backdrop click or Escape: cancel
+        ctx->result = 1;
+        ctx->result_set = true;
+        app_event_emit_close(ctx->appInstanceId);
+    }
+}
+
+void createMobileWidgets(lv_obj_t* parent, void* user_data) {
+    auto* ctx = static_cast<Context*>(user_data);
+    ctx->overlay_shown = true;
+
+    lv_obj_t* card = lv_obj_create(parent);
+    lv_obj_set_width(card, 216);
+    lv_obj_set_height(card, LV_SIZE_CONTENT);
+    lv_obj_align(card, LV_ALIGN_BOTTOM_MID, 0, -12);
+    lv_obj_set_style_bg_color(card, mobile::color(mobile::COLOR_SURFACE), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(card, LV_OPA_COVER, LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(card, mobile::RADIUS_CARD, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(card, 1, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_color(card, mobile::color(mobile::COLOR_LINE), LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(card, 16, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_row(card, 0, LV_STATE_DEFAULT);
+    lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_scrollable(card, false);
+
+    lv_obj_t* title = mobile::createLabel(card, ctx->argv[0], FONT_SIZE_LARGE, mobile::COLOR_TEXT);
+    lv_obj_set_width(title, LV_PCT(100));
+    lv_label_set_long_mode(title, LV_LABEL_LONG_MODE_DOTS);
+
+    lv_obj_t* message = mobile::createLabel(card, ctx->argv[1], FONT_SIZE_DEFAULT, mobile::COLOR_TEXT_2);
+    lv_obj_set_width(message, LV_PCT(100));
+    lv_label_set_long_mode(message, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_style_margin_top(message, 8, LV_STATE_DEFAULT);
+
+    lv_obj_t* button_row = lv_obj_create(card);
+    lv_obj_remove_style_all(button_row);
+    lv_obj_set_size(button_row, LV_PCT(100), 40);
+    lv_obj_set_style_margin_top(button_row, 16, LV_STATE_DEFAULT);
+    lv_obj_set_flex_flow(button_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(button_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(button_row, 8, LV_STATE_DEFAULT);
+    lv_obj_set_scrollable(button_row, false);
+
+    // Index 0 is the confirming action and sits on the right, like the mockup
+    lv_obj_t* first_button = nullptr;
+    for (int32_t index = ctx->argc - 3; index >= 0; index--) {
+        lv_obj_t* button = lv_button_create(button_row);
+        mobile::styleButton(button, index == 0);
+        lv_obj_set_height(button, 40);
+        lv_obj_set_flex_grow(button, 1);
+        lv_obj_t* label = mobile::createLabel(
+            button,
+            ctx->argv[2 + index],
+            FONT_SIZE_DEFAULT,
+            index == 0 ? mobile::COLOR_ON_ACCENT : mobile::COLOR_TEXT
+        );
+        lv_obj_center(label);
+        auto* button_ctx = new ButtonContext { ctx, index };
+        lv_obj_add_event_cb(button, onDialogButtonPressed, LV_EVENT_SHORT_CLICKED, button_ctx);
+        lv_obj_add_event_cb(button, onButtonDeleted, LV_EVENT_DELETE, button_ctx);
+        if (first_button == nullptr) {
+            first_button = button;
+        }
+    }
+
+    if (first_button != nullptr && !lvgl_indev_exists(LV_INDEV_TYPE_POINTER)) {
+        lv_group_focus_obj(first_button);
+        lv_obj_add_state(first_button, LV_STATE_FOCUS_KEY);
+    }
+}
+
+#endif
+
 int32_t appMain(int argc, char* argv[]) {
     uint32_t appInstanceId = app_scheduler_current_app_id();
     Context ctx { appInstanceId };
@@ -121,7 +221,36 @@ int32_t appMain(int argc, char* argv[]) {
     AppEventSubscription sub {};
     check(app_event_subscribe(&sub, &event_group) == ERROR_NONE);
 
-    WindowId window = window_manager_create(appInstanceId, createWidgets, &ctx);
+#if defined(CONFIG_TT_MOBILE_HOME)
+    if (window_manager_overlay_show(createMobileWidgets, destroyMobileWidgets, &ctx) != ERROR_NONE) {
+        check(app_event_unsubscribe(&sub) == ERROR_NONE);
+        task_event_group_destruct(&event_group);
+        return 1;
+    }
+
+    while (true) {
+        task_event_group_wait_any(&event_group, nullptr, portMAX_DELAY);
+
+        bool shouldClose = false;
+        AppEvent event {};
+        while (app_event_poll(&sub, &event) == ERROR_NONE) {
+            if (event.type == APP_EVENT_CLOSE) {
+                shouldClose = true;
+                break;
+            }
+        }
+        if (shouldClose) break;
+    }
+
+    if (ctx.overlay_shown) {
+        window_manager_overlay_hide();
+    }
+    check(app_event_unsubscribe(&sub) == ERROR_NONE);
+    task_event_group_destruct(&event_group);
+
+    return ctx.result;
+#else
+    WindowId window = window_manager_create(appInstanceId, createLegacyWidgets, &ctx);
 
     while (true) {
         task_event_group_wait_any(&event_group, nullptr, portMAX_DELAY);
@@ -142,6 +271,7 @@ int32_t appMain(int argc, char* argv[]) {
     task_event_group_destruct(&event_group);
 
     return ctx.result;
+#endif
 }
 
 } // namespace

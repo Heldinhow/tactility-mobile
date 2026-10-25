@@ -63,6 +63,7 @@ namespace app {
     namespace poweroff { extern const ::AppManifest manifest; }
     namespace qrcode { extern const ::AppManifest manifest; }
     namespace selectiondialog { extern const ::AppManifest manifest; }
+    namespace settingshub { extern const ::AppManifest manifest; }
     namespace setup { extern const ::AppManifest manifest; }
     namespace shell { extern const ::AppManifest manifest; extern const ::AppManifest sh_manifest; }
     namespace systeminfo { extern const ::AppManifest manifest; }
@@ -133,6 +134,9 @@ static void registerInternalApps() {
     }
     app_manager_add(&app::qrcode::manifest);
     app_manager_add(&app::selectiondialog::manifest);
+#if defined(CONFIG_TT_MOBILE_HOME)
+    app_manager_add(&app::settingshub::manifest);
+#endif
     app_manager_add(&app::setup::manifest);
     app_manager_add(&app::shell::manifest);
     app_manager_add(&app::shell::sh_manifest);

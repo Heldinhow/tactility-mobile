@@ -4,11 +4,20 @@
 
 #include <tactility/drivers/keyboard.h>
 
+#include <lvgl/lvgl.h>
+#include <lvgl/draw/lv_snapshot.h>
+
 #include <SDL2/SDL.h>
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstdio>
+#include <cstring>
 #include <mutex>
+
+// Development aid, see Tactility/Source/lvgl/SimulatorDevNavigation.cpp
+extern void simulatorDevAction(int index);
+extern void simulatorDevActionList(const char* list);
 
 namespace {
 
@@ -93,6 +102,53 @@ uint32_t keycode_to_key(SDL_Keycode sdl_key, bool shift) {
     }
 }
 
+/**
+ * Development aid for the screen comparisons: F12 saves the active screen as a PPM (RGB888).
+ * TACTILITY_SIM_SCREENSHOT overrides the path; the default is next to the simulator's working
+ * directory. A PPM keeps this free of an encoder dependency; the verification step converts it.
+ */
+/** Takes the snapshot; the caller runs on the LVGL task or holds the LVGL lock. */
+void take_screenshot_now() {
+    // The lock lives on the top layer; overlays in the app layer are part of the active screen
+    lv_obj_t* target = lv_layer_top();
+    if (lv_obj_get_child_count(target) == 0) {
+        target = lv_screen_active();
+    }
+    lv_draw_buf_t* snapshot = lv_snapshot_take(target, LV_COLOR_FORMAT_RGB888);
+    if (snapshot != nullptr) {
+        const char* path = getenv("TACTILITY_SIM_SCREENSHOT");
+        if (path == nullptr) {
+            path = "sim-screenshot.ppm";
+        }
+        FILE* file = fopen(path, "wb");
+        if (file != nullptr) {
+            fprintf(file, "P6\n%u %u\n255\n", static_cast<unsigned>(snapshot->header.w), static_cast<unsigned>(snapshot->header.h));
+            const auto* data = static_cast<const uint8_t*>(snapshot->data);
+            for (uint32_t y = 0; y < snapshot->header.h; y++) {
+                const uint8_t* row = data + y * snapshot->header.stride;
+                for (uint32_t x = 0; x < snapshot->header.w; x++) {
+                    // LVGL's RGB888 buffer is BGR; PPM is RGB
+                    const uint8_t pixel[3] = { row[x * 3 + 2], row[x * 3 + 1], row[x * 3] };
+                    fwrite(pixel, 1, 3, file);
+                }
+            }
+            fclose(file);
+        }
+        lv_draw_buf_destroy(snapshot);
+    }
+}
+
+void take_screenshot() {
+    lvgl_lock();
+    take_screenshot_now();
+    lvgl_unlock();
+}
+
+}
+
+/** Development aid for SimulatorDevNavigation: called on the LVGL task. */
+void simulator_take_screenshot_now() {
+    take_screenshot_now();
 }
 
 void sdl_input_pump() {
@@ -133,7 +189,13 @@ void sdl_input_pump() {
                     }
                     break;
                 case SDL_KEYDOWN:
-                    push_key(keycode_to_key(event.key.keysym.sym, (event.key.keysym.mod & KMOD_SHIFT) != 0));
+                    if (event.key.keysym.sym == SDLK_F12) {
+                        take_screenshot();
+                    } else if (event.key.keysym.sym >= SDLK_F1 && event.key.keysym.sym <= SDLK_F9) {
+                        simulatorDevAction(static_cast<int>(event.key.keysym.sym - SDLK_F1) + 1);
+                    } else {
+                        push_key(keycode_to_key(event.key.keysym.sym, (event.key.keysym.mod & KMOD_SHIFT) != 0));
+                    }
                     break;
                 case SDL_TEXTINPUT:
                     // ASCII only (first byte of event.text.text) - sufficient for a simulator keyboard.
@@ -160,6 +222,28 @@ void sdl_input_pump() {
 
     if (quit_requested) {
         exit(0);
+    }
+
+    // Development aid: open a screen from TACTILITY_SIM_ACTION (1-9, see simulatorDevAction)
+    static bool dev_action_done = false;
+    if (!dev_action_done) {
+        const char* action = getenv("TACTILITY_SIM_ACTION");
+        if (action != nullptr && SDL_GetTicks() >= 2500) {
+            simulatorDevActionList(action);
+            dev_action_done = true;
+        }
+    }
+
+    // Development aid: capture once after a delay without needing a window or key interaction.
+    // With TACTILITY_SIM_ACTION the action schedules the capture on the LVGL task instead, because
+    // taking the LVGL lock from this thread while it is contended aborts the POSIX port.
+    static bool auto_capture_done = false;
+    if (!auto_capture_done && getenv("TACTILITY_SIM_ACTION") == nullptr) {
+        const char* delay = getenv("TACTILITY_SIM_SCREENSHOT_DELAY_MS");
+        if (delay != nullptr && SDL_GetTicks() >= static_cast<uint32_t>(atoi(delay))) {
+            take_screenshot();
+            auto_capture_done = true;
+        }
     }
 }
 

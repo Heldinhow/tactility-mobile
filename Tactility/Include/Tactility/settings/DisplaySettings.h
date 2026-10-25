@@ -18,6 +18,7 @@ enum class ScreensaverType {
     Mystify,
     MatrixRain,
     StackChan,
+    Lock,           // Phone-style lock screen
     Count           // Sentinel for bounds checking - must be last
 };
 

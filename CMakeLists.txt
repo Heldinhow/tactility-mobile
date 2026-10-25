@@ -131,6 +131,10 @@ else ()
     add_compile_definitions(CONFIG_TT_DEVICE_NAME_SIMPLE="Simulator")
     add_compile_definitions(CONFIG_TT_AUTO_START_APP_ID="")
     add_compile_definitions(CONFIG_TT_USER_DATA_LOCATION_INTERNAL)
+    # The simulator runs the mobile presentation so the 240x320 screens can be checked against the mockups
+    add_compile_definitions(CONFIG_TT_MOBILE_HOME=1)
+    # Edge gestures and the Recents switcher are part of the mobile design
+    add_compile_definitions(CONFIG_TT_SYSTEM_GESTURES=1)
 
 endif ()
 
@@ -195,6 +199,8 @@ if (NOT DEFINED ENV{ESP_IDF_VERSION})
     add_subdirectory(Drivers/gps-generic-module)
     add_subdirectory(Drivers/gps-meshtastic-module)
     add_subdirectory(Drivers/mock-drivers-module)
+    # The simulator DTS includes the mock drivers' bindings; Tactility compiles the generated tree
+    target_include_directories(Tactility PRIVATE "${CMAKE_SOURCE_DIR}/Drivers/mock-drivers-module/include")
     # Kernel-only software aggregate; built on sim so its device-lifecycle behavior
     # is covered by Drivers/audio-stream-module/tests.
     add_subdirectory(Drivers/audio-stream-module)

@@ -11,6 +11,11 @@
 #include <Tactility/lvgl/SystemRecents.h>
 #include <Tactility/lvgl/SystemWindow.h>
 
+// The lock service is an ESP-only service; the simulator has no display-idle service
+#if defined(CONFIG_TT_MOBILE_HOME) && defined(ESP_PLATFORM)
+#include <Tactility/service/displayidle/DisplayIdleService.h>
+#endif
+
 #include <app/event.h>
 #include <app/manager.h>
 #include <app/manifest.h>
@@ -111,6 +116,14 @@ void onHoldTimer(lv_timer_t* timer) {
         clearPress();
         return;
     }
+#if defined(CONFIG_TT_MOBILE_HOME) && defined(ESP_PLATFORM)
+    auto display_idle = service::displayidle::findService();
+    if (display_idle != nullptr && display_idle->isLocked()) {
+        // The press woke the display; it must not hold its way into the recents switcher
+        clearPress();
+        return;
+    }
+#endif
     if (lv_tick_elaps(state.press_tick) < HOLD_TIME_MS) {
         return;
     }
@@ -153,6 +166,25 @@ void onIndevPressed(lv_event_t* event) {
 
     lv_point_t point;
     lv_indev_get_point(indev, &point);
+
+#if defined(CONFIG_TT_MOBILE_HOME) && defined(ESP_PLATFORM)
+    auto display_idle = service::displayidle::findService();
+    if (display_idle != nullptr && display_idle->isLocked()) {
+        if (!display_idle->isLockScreenVisible()) {
+            // The screen is off and locked: consume the wake press so it cannot click or navigate
+            lv_indev_wait_release(indev);
+            return;
+        }
+        // The lock takes any press, not just one from an edge: a swipe up anywhere unlocks it
+        state.indev = indev;
+        state.edge = SystemGestureEdge::None;
+        state.press = point;
+        state.press_tick = lv_tick_get();
+        state.hold_triggered = false;
+        return;
+    }
+#endif
+
     const SystemGestureEdge edge = systemGestureEdgeAt(
         point.x,
         point.y,
@@ -187,6 +219,10 @@ void onIndevReleased(lv_event_t* event) {
     const SystemGestureEdge edge = state.edge;
     const lv_point_t press = state.press;
     const bool hold_triggered = state.hold_triggered;
+#if defined(CONFIG_TT_MOBILE_HOME)
+    // A locked press is the only one that sets an indev with no edge
+    const bool press_started_locked = state.indev != nullptr && state.edge == SystemGestureEdge::None;
+#endif
     clearPress();
 
     if (hold_triggered) {
@@ -195,6 +231,17 @@ void onIndevReleased(lv_event_t* event) {
 
     lv_point_t point;
     lv_indev_get_point(indev, &point);
+
+#if defined(CONFIG_TT_MOBILE_HOME) && defined(ESP_PLATFORM)
+    auto display_idle = service::displayidle::findService();
+    if (display_idle != nullptr && display_idle->isLocked()) {
+        if (display_idle->isLockScreenVisible() && press_started_locked && systemGestureIsSwipeUp(press.x, press.y, point.x, point.y)) {
+            lv_indev_reset(indev, nullptr);
+            display_idle->requestUnlock();
+        }
+        return;
+    }
+#endif
 
     if (edge == SystemGestureEdge::Bottom) {
         if (systemGestureIsSwipeUp(press.x, press.y, point.x, point.y)) {

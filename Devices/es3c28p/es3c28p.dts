@@ -103,7 +103,6 @@
 
 	display_backlight {
 		compatible = "pwm-backlight";
-		status = "disabled";
 		pwm = <&display_backlight_pwm>;
 	};
 

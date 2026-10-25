@@ -49,6 +49,19 @@ class View final {
     void runFile(const std::string& file_path);
     void onNavigate();
 
+#if defined(CONFIG_TT_MOBILE_HOME)
+    bool mobileMode = false;
+    lv_obj_t* mobile_list = nullptr;
+    lv_obj_t* mobile_path_label = nullptr;
+    lv_obj_t* mobile_footer_label = nullptr;
+    lv_obj_t* mobile_menu_button = nullptr;
+    void initMobile(uint32_t appInstanceId, lv_obj_t* parent);
+    void updateMobile();
+    static void onToolbarBackCallback(lv_event_t* event);
+    static void onMobileRowEvent(lv_event_t* event);
+    static void onMobileRowDeleted(lv_event_t* event);
+#endif
+
 public:
 
     View(const std::shared_ptr<State>& state, TaskEventGroup* eventGroup);

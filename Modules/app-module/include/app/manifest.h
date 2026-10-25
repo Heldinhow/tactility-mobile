@@ -41,15 +41,17 @@ enum AppManifestFlags {
     APP_MANIFEST_FLAG_CLEANUP = 1 << 2,
 };
 
-/** Largest stack depth (in words) an app may request. Keeps `depth * sizeof(StackType_t)` safely
- * bounded and stops one app from claiming an unreasonable share of available RAM.
- * A depth beyond must be rejected outright.
+/** Largest stack depth an app may request, in units of `StackType_t`. Keeps
+ * `depth * sizeof(StackType_t)` safely bounded and stops one app from claiming an unreasonable
+ * share of available RAM. A depth beyond must be rejected outright.
  * Was last increased because of recursive-descent shell interpreter. */
 #define APP_STACK_SIZE_MAX 65535
 
 struct AppStackConfig {
-    /** Stack depth (in words, matching FreeRTOS's configSTACK_DEPTH_TYPE) for this app's task.
-     * 0 uses the scheduler's default. Must not exceed APP_STACK_SIZE_MAX. */
+    /** Stack depth in units of `StackType_t`: bytes on FreeRTOS/ESP-IDF (xtensa and riscv ports
+     * define `portSTACK_TYPE` as a byte type) and words on the POSIX port. 3072 is therefore 3 KB
+     * on the device, not 12 KB. 0 uses the scheduler's default (8192 bytes' worth). Must not
+     * exceed APP_STACK_SIZE_MAX. */
     uint16_t depth;
     /** Desired memory capability.
      * 0 means default.

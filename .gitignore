@@ -33,5 +33,7 @@ __pycache__
 .DS_Store
 .cache
 
+# Simulator screen captures from the F12 development aid
+sim-screenshot.ppm
 # Graphify local output
 graphify-out/

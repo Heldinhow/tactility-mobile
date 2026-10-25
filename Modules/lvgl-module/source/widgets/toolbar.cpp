@@ -18,29 +18,48 @@
 
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
+#ifdef ESP_PLATFORM
+#include <sdkconfig.h>
+#endif
+
 constexpr auto* TAG = "lvgl_toolbar";
 
 static uint32_t getToolbarHeight(bool isCompact) {
+#if defined(CONFIG_TT_MOBILE_HOME)
+    (void)isCompact;
+    return 44;
+#else
     if (isCompact) {
         return lvgl_get_text_font_height(FONT_SIZE_DEFAULT) * 1.6f;
     } else {
         return lvgl_get_text_font_height(FONT_SIZE_LARGE) * 2.2f;
     }
+#endif
 }
 
 static const _lv_font_t* getToolbarFont(bool isCompact) {
+#if defined(CONFIG_TT_MOBILE_HOME)
+    (void)isCompact;
+    return lvgl_get_text_font(FONT_SIZE_LARGE);
+#else
     if (isCompact) {
         return lvgl_get_text_font(FONT_SIZE_DEFAULT);
     } else {
         return lvgl_get_text_font(FONT_SIZE_LARGE);
     }
+#endif
 }
 
 /** The size of icon buttons, which leaves room for the theme's focus indicator */
 static uint32_t getActionButtonSize(bool isCompact) {
+#if defined(CONFIG_TT_MOBILE_HOME)
+    (void)isCompact;
+    return 44;
+#else
     auto toolbar_height = getToolbarHeight(isCompact);
     auto padding = !isCompact ? (uint32_t)(toolbar_height * 0.2f) : 8;
     return toolbar_height - padding;
+#endif
 }
 
 typedef struct {
@@ -123,7 +142,11 @@ lv_obj_t* lvgl_toolbar_create(lv_obj_t* parent, const char* title) {
     lv_label_set_long_mode(toolbar->title_label, LV_LABEL_LONG_MODE_SCROLL);
     lv_obj_set_flex_grow(toolbar->title_label, 1);
 
+#if defined(CONFIG_TT_MOBILE_HOME)
+    lvgl_toolbar_set_nav_action(obj, LV_SYMBOL_LEFT, &default_nav_action, nullptr);
+#else
     lvgl_toolbar_set_nav_action(obj, LV_SYMBOL_CLOSE, &default_nav_action, nullptr);
+#endif
 
     // If we don't have a touch device, we assume there's some other kind of input like a keyboard, an encoder or button control
     // In that scenario we want to automatically have the close button selected so the user doesn't have to press the widget selection
@@ -152,6 +175,23 @@ void lvgl_toolbar_set_nav_action(lv_obj_t* obj, const char* icon, lv_event_cb_t 
         lv_obj_add_event_cb(toolbar->close_button, callback, LV_EVENT_SHORT_CLICKED, user_data);
     }
     lv_image_set_src(toolbar->close_button_image, icon); // e.g. LV_SYMBOL_CLOSE
+}
+
+void lvgl_toolbar_set_nav_icon(lv_obj_t* obj, const lv_image_dsc_t* image) {
+    auto* toolbar = reinterpret_cast<Toolbar*>(obj);
+    lv_image_set_src(toolbar->close_button_image, image);
+}
+
+void lvgl_toolbar_set_nav_image(lv_obj_t* obj, const lv_image_dsc_t* image, lv_event_cb_t callback, void* user_data) {
+    auto* toolbar = reinterpret_cast<Toolbar*>(obj);
+    if (toolbar->nav_action_callback != nullptr) {
+        lv_obj_remove_event_cb(toolbar->close_button, toolbar->nav_action_callback);
+    }
+    toolbar->nav_action_callback = callback;
+    if (callback != nullptr) {
+        lv_obj_add_event_cb(toolbar->close_button, callback, LV_EVENT_SHORT_CLICKED, user_data);
+    }
+    lv_image_set_src(toolbar->close_button_image, image);
 }
 
 static lv_obj_t* toolbar_add_button_action(lv_obj_t* obj, const char* imageOrButton, bool isImage, lv_event_cb_t callback, void* user_data) {

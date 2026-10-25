@@ -1,6 +1,7 @@
 #include <Tactility/app/wifimanage/View.h>
 #include <Tactility/app/wifimanage/WifiManagePrivate.h>
 
+#include <Tactility/app/alertdialog/AlertDialog.h>
 #include <Tactility/app/wifiapsettings/WifiApSettings.h>
 #include <Tactility/app/wificonnect/WifiConnect.h>
 #include <Tactility/Tactility.h>
@@ -45,11 +46,16 @@ struct Context {
     TaskEventGroup* eventGroup = nullptr;
     uint32_t refreshBit = 0;
     std::atomic<bool> needsRefresh {false};
+    uint32_t forgetDialogId = 0;
+    std::string forgetSsid;
 
     void lock() { mutex.lock(); }
     void unlock() { mutex.unlock(); }
 };
 
+
+/** The app instance for the forget dialog's result; one Wi-Fi app instance at a time */
+Context* active_context = nullptr;
 
 /** Turns the radio on when needed and connects. Runs on the main dispatcher, as turning the radio on blocks. */
 static void connectToAp(const WifiApSettings& ap) {
@@ -107,6 +113,19 @@ static void onShowApSettings(const std::string& ssid) {
 
 static void onDisconnect() {
     disconnectFromAp();
+}
+
+static void onForget(const std::string& ssid) {
+    if (active_context == nullptr) {
+        return;
+    }
+    active_context->forgetSsid = ssid;
+    active_context->forgetDialogId = alertdialog::start(
+        active_context->appInstanceId,
+        "Forget network?",
+        "You'll need the password to join " + ssid + " again.",
+        { "Forget", "Cancel" }
+    );
 }
 
 static void onWifiToggled(bool enabled) {
@@ -242,8 +261,10 @@ int32_t appMain(int argc, char* argv[]) {
         .onDisconnect = onDisconnect,
         .onShowApSettings = onShowApSettings,
         .onConnectToHidden = onConnectToHidden,
-        .onRefresh = onRefresh
+        .onRefresh = onRefresh,
+        .onForget = onForget
     };
+    active_context = &ctx;
 
     TaskEventGroup event_group {};
     task_event_group_construct(&event_group);
@@ -313,6 +334,26 @@ int32_t appMain(int argc, char* argv[]) {
                 case APP_EVENT_CLOSE:
                     shouldClose = true;
                     break;
+                case APP_EVENT_RESULT:
+                    if (event.result.launch_id == ctx.forgetDialogId) {
+                        ctx.forgetDialogId = 0;
+                        if (event.result.result == 0) {
+                            // Forget: disconnect without auto-connect and remove the saved settings
+                            disconnectFromAp();
+                            const error_t remove_result = wifi_settings_remove(ctx.forgetSsid.c_str());
+                            lvgl_lock();
+                            ctx.lock();
+                            ctx.view.setError(remove_result == ERROR_NONE ? "" : "Could not forget " + ctx.forgetSsid);
+                            ctx.unlock();
+                            lvgl_unlock();
+                            if (remove_result == ERROR_NONE) {
+                                updateStateFromDevice(&ctx);
+                                ctx.needsRefresh = true;
+                            }
+                        }
+                        app_manager_stop(event.result.launch_id);
+                    }
+                    break;
                 default:
                     break;
             }
@@ -336,6 +377,7 @@ int32_t appMain(int argc, char* argv[]) {
         device_put(ctx.wifiDevice);
     }
 
+    active_context = nullptr;
     window_manager_remove(window);
     check(app_event_unsubscribe(&sub) == ERROR_NONE);
     task_event_group_destruct(&event_group);
