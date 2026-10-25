@@ -42,6 +42,15 @@ void lvgl_toolbar_set_title(lv_obj_t* obj, const char* title);
 void lvgl_toolbar_set_nav_action(lv_obj_t* obj, const char* icon, lv_event_cb_t callback, void* userData);
 
 /**
+ * Sets the navigation action of the toolbar with an image descriptor (for the v2 icon masks)
+ * @param[in] obj the toolbar instance
+ * @param[in] image the image to set on the button
+ * @param[in] callback the callback for the click action of the button
+ * @param[in] userData the user data that is attached to the callback event object
+ */
+void lvgl_toolbar_set_nav_image(lv_obj_t* obj, const lv_image_dsc_t* image, lv_event_cb_t callback, void* userData);
+
+/**
  * Create and add an action button with an image to the toolbar (aligned to the right of the toolbar)
  * @param[in] obj the toolbar instance
  * @param[in] imagePath the path to an image file to shown on the button

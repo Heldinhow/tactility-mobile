@@ -11,6 +11,10 @@
 #include <utility>
 #include <vector>
 
+#ifdef ESP_PLATFORM
+#include <sdkconfig.h>
+#endif
+
 namespace tt::lvgl {
 
 using settings::launcher::SystemBarsLayout;
@@ -53,9 +57,15 @@ void onPointerPressed(lv_event_t* event) {
 
 // In the side layout, the top edge has no statusbar to swipe down from, so a swipe down that starts there opens the system menu
 void onPointerReleased(lv_event_t* event) {
+#if defined(CONFIG_TT_MOBILE_HOME)
+    if (window_manager_get_active_layer() != WINDOW_LAYER_APP) {
+        return;
+    }
+#else
     if (state.layout != SystemBarsLayout::Side || window_manager_get_active_layer() != WINDOW_LAYER_APP) {
         return;
     }
+#endif
     lv_indev_t* indev = getEventIndev(event);
     lv_point_t point;
     lv_indev_get_point(indev, &point);

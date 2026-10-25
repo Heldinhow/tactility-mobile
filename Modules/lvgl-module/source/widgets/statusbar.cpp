@@ -25,6 +25,10 @@
 #include <cstring>
 #include <ctime>
 
+#ifdef ESP_PLATFORM
+#include <sdkconfig.h>
+#endif
+
 constexpr auto* TAG = "lvgl_statusbar";
 constexpr auto STATUSBAR_ICON_LIMIT = LVGL_STATUSBAR_ICON_LIMIT;
 
@@ -285,7 +289,11 @@ lv_obj_t* lvgl_statusbar_create(lv_obj_t* parent) {
 
     lv_obj_set_width(obj, LV_PCT(100));
     lv_obj_set_style_pad_ver(obj, 0, LV_STATE_DEFAULT);
+#if defined(CONFIG_TT_MOBILE_HOME)
+    lv_obj_set_style_pad_hor(obj, 12, LV_STATE_DEFAULT);
+#else
     lv_obj_set_style_pad_hor(obj, 2, LV_STATE_DEFAULT);
+#endif
     lv_obj_center(obj);
     auto icon_size = lvgl_get_statusbar_icon_font_height();
     const bool is_compact = lvgl_theme_is_compact();
@@ -325,7 +333,12 @@ lv_obj_t* lvgl_statusbar_create(lv_obj_t* parent) {
         }
 
         statusbar->time = lv_label_create(obj);
+#if defined(CONFIG_TT_MOBILE_HOME)
+        lv_obj_set_style_text_font(statusbar->time, lvgl_get_text_font(FONT_SIZE_SECONDARY), LV_STATE_DEFAULT);
+        lv_obj_set_style_margin_left(statusbar->time, 12, LV_STATE_DEFAULT);
+#else
         lv_obj_set_style_margin_left(statusbar->time, 4, LV_STATE_DEFAULT);
+#endif
         update_time(statusbar);
 
         auto* left_spacer = lv_obj_create(obj);
@@ -340,7 +353,11 @@ lv_obj_t* lvgl_statusbar_create(lv_obj_t* parent) {
         icon_row = lvgl_focus_container_create(obj);
         lv_obj_set_style_pad_column(icon_row, icon_padding, LV_STATE_DEFAULT);
         lv_obj_set_style_pad_row(icon_row, icon_padding, LV_STATE_DEFAULT);
+#if defined(CONFIG_TT_MOBILE_HOME)
+        lv_obj_set_style_margin_right(icon_row, 12, LV_STATE_DEFAULT);
+#else
         lv_obj_set_style_margin_right(icon_row, 2, LV_STATE_DEFAULT);
+#endif
         lv_obj_set_flex_flow(icon_row, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(icon_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
@@ -674,9 +691,13 @@ lv_obj_t* lvgl_statusbar_get_action_container(lv_obj_t* obj) {
 }
 
 int32_t lvgl_statusbar_get_height() {
+#if defined(CONFIG_TT_MOBILE_HOME)
+    return 24;
+#else
     const auto icon_size = lvgl_get_statusbar_icon_font_height();
     const auto vertical_padding = static_cast<uint32_t>((static_cast<float>(icon_size) * 0.1f));
     return static_cast<int32_t>(icon_size + (2 * vertical_padding) + 4);
+#endif
 }
 
 }
