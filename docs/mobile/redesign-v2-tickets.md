@@ -226,7 +226,7 @@ grid and mode wiring.
 
 **Blocked by:** RV2-01, RV2-05, RV2-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Test seam:** Seam 1 (Home resolver, extended) and seam 3 (presentation guard), both pure and
 unit-tested.

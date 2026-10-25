@@ -30,156 +30,136 @@ std::vector<std::string> ids(const std::vector<HomeItem>& items) {
     return result;
 }
 
-}
-
-TEST_CASE("the apps view starts with Settings and pins the carousel and Wi-Fi") {
-    const std::vector<HomeApp> apps = {
+std::vector<HomeApp> boardApps() {
+    return {
+        app(SETTINGS_APP_ID, "Settings"),
+        app(GROK_BOT_APP_ID, "Grok Bot"),
+        app(WIFI_APP_ID, "Wi-Fi", true),
         app("tactility.files", "Files"),
-        app("tactility.wifimanage", "Wi-Fi", true),
-        app("one.grokbot.carousel", "Grok Bot"),
+        app("tactility.camera", "Camera"),
         app("tactility.notes", "Notes"),
     };
-    const auto items = resolveHomeItems(HomeView::Apps, apps, { "one.grokbot.carousel", "tactility.wifimanage" });
+}
 
-    CHECK_EQ(items.size(), 5);
-    CHECK_EQ(items[0].id, HOME_MODE_ITEM_ID);
-    CHECK_EQ(items[0].name, "Settings");
-    CHECK_FALSE(items[0].highlighted);
+}
+
+TEST_CASE("the Home starts with Settings, Grok Bot and Wi-Fi, then the rest by name") {
+    const auto items = resolveHomeItems(boardApps());
+
     CHECK_EQ(ids(items), (std::vector<std::string> {
-        HOME_MODE_ITEM_ID,
-        "one.grokbot.carousel",
-        "tactility.wifimanage",
+        SETTINGS_APP_ID,
+        GROK_BOT_APP_ID,
+        WIFI_APP_ID,
+        "tactility.camera",
         "tactility.files",
         "tactility.notes",
     }));
 }
 
-TEST_CASE("a missing or incompatible pinned app leaves no gap") {
-    const std::vector<HomeApp> apps = {
-        app("tactility.wifimanage", "Wi-Fi", true),
-        app("one.grokbot.carousel", "Grok Bot", false, false, false, false),
-        app("tactility.files", "Files"),
-    };
-    const auto items = resolveHomeItems(HomeView::Apps, apps, { "one.grokbot.carousel", "tactility.wifimanage" });
-
-    CHECK_EQ(ids(items), (std::vector<std::string> {
-        HOME_MODE_ITEM_ID,
-        "tactility.wifimanage",
-        "tactility.files",
-    }));
-}
-
-TEST_CASE("hidden, headless and settings apps are kept out of the apps view") {
-    const std::vector<HomeApp> apps = {
-        app("tactility.visible", "Visible"),
-        app("tactility.hidden", "Hidden", false, false, true),
-        app("tactility.headless", "Headless", false, false, true),
-        app("tactility.settings", "Display", true),
-        app("tactility.incompatible", "Incompatible", false, false, false, false),
-    };
-    const auto items = resolveHomeItems(HomeView::Apps, apps, {});
-
-    CHECK_EQ(ids(items), (std::vector<std::string> { HOME_MODE_ITEM_ID, "tactility.visible" }));
-}
-
 TEST_CASE("favourites come before the rest, but after the pinned apps") {
-    const std::vector<HomeApp> apps = {
+    std::vector<HomeApp> apps = {
+        app(SETTINGS_APP_ID, "Settings"),
         app("tactility.zeta", "Zeta", false, true),
         app("tactility.alpha", "Alpha"),
         app("tactility.beta", "Beta", false, true),
-        app("tactility.wifimanage", "Wi-Fi", true),
     };
-    const auto items = resolveHomeItems(HomeView::Apps, apps, { "tactility.wifimanage" });
+    const auto items = resolveHomeItems(apps);
 
     CHECK_EQ(ids(items), (std::vector<std::string> {
-        HOME_MODE_ITEM_ID,
-        "tactility.wifimanage",
+        SETTINGS_APP_ID,
         "tactility.beta",
         "tactility.zeta",
         "tactility.alpha",
     }));
 }
 
-TEST_CASE("a pinned settings app is shown in the apps view") {
-    const std::vector<HomeApp> apps = {
-        app("tactility.wifimanage", "Wi-Fi", true),
+TEST_CASE("hidden, headless and unpinned settings apps stay out of the Home") {
+    std::vector<HomeApp> apps = {
+        app(SETTINGS_APP_ID, "Settings"),
+        app("tactility.visible", "Visible"),
+        app("tactility.hidden", "Hidden", false, false, true),
         app("tactility.display", "Display", true),
+        app("tactility.incompatible", "Incompatible", false, false, false, false),
     };
-    const auto items = resolveHomeItems(HomeView::Apps, apps, { "tactility.wifimanage" });
+    const auto items = resolveHomeItems(apps);
 
-    CHECK_EQ(ids(items), (std::vector<std::string> { HOME_MODE_ITEM_ID, "tactility.wifimanage" }));
+    CHECK_EQ(ids(items), (std::vector<std::string> { SETTINGS_APP_ID, "tactility.visible" }));
 }
 
-TEST_CASE("the settings view starts with Apps and lists only settings apps by name") {
-    const std::vector<HomeApp> apps = {
-        app("tactility.display", "Display", true),
+TEST_CASE("a missing or incompatible pinned app leaves no gap") {
+    std::vector<HomeApp> apps = {
+        app(SETTINGS_APP_ID, "Settings"),
+        app(WIFI_APP_ID, "Wi-Fi", true),
         app("tactility.files", "Files"),
-        app("tactility.audio", "Audio", true),
-        app("tactility.hidden", "Hidden settings", true, false, true),
     };
-    const auto items = resolveHomeItems(HomeView::Settings, apps, { "tactility.wifimanage" });
+    const auto items = resolveHomeItems(apps);
 
-    CHECK_EQ(items.size(), 3);
-    CHECK_EQ(items[0].id, HOME_MODE_ITEM_ID);
-    CHECK_EQ(items[0].name, "Apps");
     CHECK_EQ(ids(items), (std::vector<std::string> {
-        HOME_MODE_ITEM_ID,
-        "tactility.audio",
-        "tactility.display",
+        SETTINGS_APP_ID,
+        WIFI_APP_ID,
+        "tactility.files",
     }));
 }
 
-TEST_CASE("a repeated app id appears once") {
-    const std::vector<HomeApp> apps = {
+TEST_CASE("more than one page is returned whole, so the UI can slice it") {
+    std::vector<HomeApp> apps = { app(SETTINGS_APP_ID, "Settings") };
+    for (int i = 0; i < 12; i++) {
+        apps.push_back(app(("tactility.app" + std::to_string(i)).c_str(), ("App " + std::to_string(i)).c_str()));
+    }
+    const auto items = resolveHomeItems(apps);
+
+    CHECK_EQ(items.size(), 13);
+    CHECK_EQ(items.front().id, SETTINGS_APP_ID);
+    CHECK_EQ(items.back().name, "App 9");
+}
+
+TEST_CASE("an app id appears once") {
+    std::vector<HomeApp> apps = {
+        app(SETTINGS_APP_ID, "Settings"),
         app("tactility.notes", "Notes"),
         app("tactility.notes", "Notes again"),
     };
-    const auto items = resolveHomeItems(HomeView::Apps, apps, {});
+    const auto items = resolveHomeItems(apps);
 
     CHECK_EQ(items.size(), 2);
     CHECK_EQ(items[1].name, "Notes");
 }
 
-TEST_CASE("the dock keeps its order and always offers Settings") {
-    const std::vector<HomeApp> apps = {
-        app("tactility.files", "Files"),
-        app("tactility.wifimanage", "Wi-Fi", true),
-        app("one.grokbot.carousel", "Grok Bot"),
-    };
-    const auto dock = resolveDockItems(apps);
+TEST_CASE("there is no mode tile: the Settings hub is a real app") {
+    const std::vector<HomeApp> apps = { app("tactility.notes", "Notes") };
+    const auto items = resolveHomeItems(apps);
+
+    REQUIRE(items.size() == 1);
+    CHECK_EQ(items[0].id, "tactility.notes");
+}
+
+TEST_CASE("the dock keeps its fixed order and omits missing apps") {
+    auto apps = boardApps();
+    auto dock = resolveDockItems(apps);
 
     REQUIRE(dock.size() == 4);
-    CHECK_EQ(std::string(dock[0].id), "tactility.wifimanage");
-    CHECK_EQ(std::string(dock[1].id), HOME_MODE_ITEM_ID);
-    CHECK(dock[1].settings);
-    CHECK_EQ(std::string(dock[2].id), "tactility.files");
-    CHECK_EQ(std::string(dock[3].id), "one.grokbot.carousel");
+    CHECK_EQ(std::string(dock[0].id), GROK_BOT_APP_ID);
+    CHECK_EQ(std::string(dock[1].id), "tactility.files");
+    CHECK_EQ(std::string(dock[2].id), "tactility.camera");
+    CHECK_EQ(std::string(dock[3].id), SETTINGS_APP_ID);
+
+    apps.erase(apps.begin() + 2); // Wi-Fi is not in the dock anyway
+    apps.erase(std::remove_if(apps.begin(), apps.end(), [](const HomeApp& app) {
+        return app.id == "tactility.camera";
+    }), apps.end());
+    dock = resolveDockItems(apps);
+    REQUIRE(dock.size() == 3);
+    CHECK_EQ(std::string(dock[2].id), SETTINGS_APP_ID);
+
+    apps.erase(std::remove_if(apps.begin(), apps.end(), [](const HomeApp& app) {
+        return app.id == GROK_BOT_APP_ID;
+    }), apps.end());
+    dock = resolveDockItems(apps);
+    REQUIRE(dock.size() == 2);
+    CHECK_EQ(std::string(dock[0].id), "tactility.files");
+    CHECK_EQ(std::string(dock[1].id), SETTINGS_APP_ID);
 }
 
-TEST_CASE("the dock collapses missing or incompatible apps without gaps") {
-    const std::vector<HomeApp> missing_carousel = {
-        app("tactility.files", "Files"),
-        app("tactility.wifimanage", "Wi-Fi", true),
-    };
-    const auto three = resolveDockItems(missing_carousel);
-    REQUIRE(three.size() == 3);
-    CHECK_EQ(std::string(three[0].id), "tactility.wifimanage");
-    CHECK_EQ(std::string(three[1].id), HOME_MODE_ITEM_ID);
-    CHECK_EQ(std::string(three[2].id), "tactility.files");
-
-    const std::vector<HomeApp> missing_wifi = {
-        app("tactility.files", "Files"),
-        app("one.grokbot.carousel", "Grok Bot", false, false, false, false),
-    };
-    const auto two = resolveDockItems(missing_wifi);
-    REQUIRE(two.size() == 2);
-    CHECK_EQ(std::string(two[0].id), HOME_MODE_ITEM_ID);
-    CHECK_EQ(std::string(two[1].id), "tactility.files");
-}
-
-TEST_CASE("the dock works with no apps at all") {
-    const auto dock = resolveDockItems({});
-    REQUIRE(dock.size() == 1);
-    CHECK_EQ(std::string(dock[0].id), HOME_MODE_ITEM_ID);
-    CHECK(dock[0].settings);
+TEST_CASE("the dock is empty without apps") {
+    CHECK(resolveDockItems({}).empty());
 }

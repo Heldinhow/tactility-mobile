@@ -91,32 +91,19 @@ std::vector<TileGridItem> collectItems() {
     return items;
 }
 
-void toggleFavourite(TileGrid& grid, const char* appId, bool keepSelection) {
-    auto* job = new (::std::nothrow) SaveFavouritesJob();
-    if (job == nullptr) {
-        LOG_E(TAG, "Failed to queue saving favourites");
-        return;
+void repopulateAfterToggle(TileGrid& grid, const char* appId, bool keepSelection) {
+    if (toggleFavourite(appId)) {
+        grid.requestRepopulate(keepSelection);
     }
-    if (!favourites.toggle(appId, job->ids)) {
-        // The favourites are still being loaded, so toggling would overwrite the file with an incomplete list
-        LOG_W(TAG, "Favourites aren't loaded yet");
-        delete job;
-        return;
-    }
-    if (file_ops_queue(saveFavourites, job, nullptr) != ERROR_NONE) {
-        LOG_E(TAG, "Failed to queue saving favourites");
-        delete job;
-    }
-    grid.requestRepopulate(keepSelection);
 }
 
 void onLongPressed(TileGrid& grid, const TileGridItem& item) {
-    toggleFavourite(grid, item.id.c_str(), false);
+    repopulateAfterToggle(grid, item.id.c_str(), false);
 }
 
 void onKey(TileGrid& grid, const TileGridItem& item, uint32_t key) {
     if (key == 'f' || key == 'F') {
-        toggleFavourite(grid, item.id.c_str(), true);
+        repopulateAfterToggle(grid, item.id.c_str(), true);
     }
 }
 
@@ -124,6 +111,26 @@ void onKey(TileGrid& grid, const TileGridItem& item, uint32_t key) {
 
 void loadFavourites(void*) {
     favourites.load();
+}
+
+bool toggleFavourite(const char* appId) {
+    auto* job = new (::std::nothrow) SaveFavouritesJob();
+    if (job == nullptr) {
+        LOG_E(TAG, "Failed to queue saving favourites");
+        return false;
+    }
+    if (!favourites.toggle(appId, job->ids)) {
+        // The favourites are still being loaded, so toggling would overwrite the file with an incomplete list
+        LOG_W(TAG, "Favourites aren't loaded yet");
+        delete job;
+        return false;
+    }
+    if (file_ops_queue(saveFavourites, job, nullptr) != ERROR_NONE) {
+        LOG_E(TAG, "Failed to queue saving favourites");
+        delete job;
+        return false;
+    }
+    return true;
 }
 
 const LauncherMode APPS_MODE = {

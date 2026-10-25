@@ -17,6 +17,7 @@
 
 // Development aid, see Tactility/Source/lvgl/SimulatorDevNavigation.cpp
 extern void simulatorDevAction(int index);
+extern void simulatorDevActionList(const char* list);
 
 namespace {
 
@@ -106,8 +107,8 @@ uint32_t keycode_to_key(SDL_Keycode sdl_key, bool shift) {
  * TACTILITY_SIM_SCREENSHOT overrides the path; the default is next to the simulator's working
  * directory. A PPM keeps this free of an encoder dependency; the verification step converts it.
  */
-void take_screenshot() {
-    lvgl_lock();
+/** Takes the snapshot; the caller runs on the LVGL task or holds the LVGL lock. */
+void take_screenshot_now() {
     lv_draw_buf_t* snapshot = lv_snapshot_take(lv_screen_active(), LV_COLOR_FORMAT_RGB888);
     if (snapshot != nullptr) {
         const char* path = getenv("TACTILITY_SIM_SCREENSHOT");
@@ -130,9 +131,19 @@ void take_screenshot() {
         }
         lv_draw_buf_destroy(snapshot);
     }
+}
+
+void take_screenshot() {
+    lvgl_lock();
+    take_screenshot_now();
     lvgl_unlock();
 }
 
+}
+
+/** Development aid for SimulatorDevNavigation: called on the LVGL task. */
+void simulator_take_screenshot_now() {
+    take_screenshot_now();
 }
 
 void sdl_input_pump() {
@@ -213,14 +224,16 @@ void sdl_input_pump() {
     if (!dev_action_done) {
         const char* action = getenv("TACTILITY_SIM_ACTION");
         if (action != nullptr && SDL_GetTicks() >= 500) {
-            simulatorDevAction(atoi(action));
+            simulatorDevActionList(action);
             dev_action_done = true;
         }
     }
 
-    // Development aid: capture once after a delay without needing a window or key interaction
+    // Development aid: capture once after a delay without needing a window or key interaction.
+    // With TACTILITY_SIM_ACTION the action schedules the capture on the LVGL task instead, because
+    // taking the LVGL lock from this thread while it is contended aborts the POSIX port.
     static bool auto_capture_done = false;
-    if (!auto_capture_done) {
+    if (!auto_capture_done && getenv("TACTILITY_SIM_ACTION") == nullptr) {
         const char* delay = getenv("TACTILITY_SIM_SCREENSHOT_DELAY_MS");
         if (delay != nullptr && SDL_GetTicks() >= static_cast<uint32_t>(atoi(delay))) {
             take_screenshot();

@@ -11,19 +11,13 @@
 
 namespace tt::app::launcher {
 
-/** The two contents of the launcher: apps, and the settings apps behind the Settings tile */
-enum class HomeView {
-    Apps,
-    Settings,
-};
-
 /** The parts of an app manifest that decide where it appears on the Home */
 struct HomeApp {
     std::string id;
     std::string name;
     const char* icon;
     bool favourite;
-    /** Hidden or headless: never shown in either view */
+    /** Hidden or headless: never shown */
     bool hidden;
     /** Belongs to the settings category */
     bool settings;
@@ -39,108 +33,90 @@ struct HomeItem {
     bool highlighted;
 };
 
-constexpr auto* HOME_MODE_ITEM_ID = "tactility.launcher.mode";
+constexpr auto* SETTINGS_APP_ID = "tactility.settings";
+constexpr auto* GROK_BOT_APP_ID = "one.grokbot.carousel";
+constexpr auto* WIFI_APP_ID = "tactility.wifimanage";
 
-/** @return the tile that switches between the apps and settings views */
-inline HomeItem makeHomeModeItem(HomeView view) {
-    return view == HomeView::Apps
-        ? HomeItem { HOME_MODE_ITEM_ID, "Settings", LVGL_ICON_SHARED_SETTINGS, false }
-        : HomeItem { HOME_MODE_ITEM_ID, "Apps", LVGL_ICON_SHARED_APPS, false };
+inline bool isHomeAppVisible(const HomeApp& app) {
+    return !app.hidden && app.compatible;
 }
 
 /**
- * Orders the tiles of one Home view.
- * Apps: the mode tile, the pinned apps in the given order, then every other app with favourites
- * first and names alphabetical. Settings: the mode tile, then the settings apps by name.
- * Hidden and incompatible apps are omitted; an app id appears at most once.
+ * Orders the tiles of the Home: the Settings hub, Grok Bot and Wi-Fi first (when installed), then
+ * every other app with favourites before the rest and names alphabetical. Settings-category apps
+ * are left to the Settings hub, except when they are one of the three pinned apps. The whole list
+ * is returned; slicing it into pages of eight is the presentation's concern.
  */
-inline std::vector<HomeItem> resolveHomeItems(
-    HomeView view,
-    const std::vector<HomeApp>& apps,
-    const std::vector<std::string>& pinned
-) {
+inline std::vector<HomeItem> resolveHomeItems(const std::vector<HomeApp>& apps) {
     std::vector<HomeItem> items;
-    items.push_back(makeHomeModeItem(view));
+    items.reserve(apps.size());
 
-    auto add = [&items](const HomeApp& app, bool highlighted) {
-        for (const auto& existing : items) {
-            if (existing.id == app.id) {
+    const auto add = [&items](const HomeApp& app) {
+        const bool exists = ::std::any_of(items.begin(), items.end(), [&app](const HomeItem& item) {
+            return item.id == app.id;
+        });
+        if (!exists) {
+            items.push_back(HomeItem { app.id, app.name, app.icon, app.favourite });
+        }
+    };
+    const auto add_pinned = [&apps, &add](const char* id) {
+        for (const auto& app : apps) {
+            if (app.id == id && isHomeAppVisible(app)) {
+                add(app);
                 return;
             }
         }
-        items.push_back(HomeItem { app.id, app.name, app.icon, highlighted });
     };
 
-    if (view == HomeView::Settings) {
-        for (const auto& app : apps) {
-            if (!app.hidden && app.compatible && app.settings) {
-                add(app, false);
-            }
-        }
-        ::std::sort(items.begin() + 1, items.end(), [](const HomeItem& a, const HomeItem& b) {
-            return a.name < b.name;
-        });
-        return items;
-    }
+    add_pinned(SETTINGS_APP_ID);
+    add_pinned(GROK_BOT_APP_ID);
+    add_pinned(WIFI_APP_ID);
 
-    const auto is_pinned = [&pinned](const std::string& id) {
-        return ::std::find(pinned.begin(), pinned.end(), id) != pinned.end();
-    };
+    std::vector<const HomeApp*> rest;
     for (const auto& app : apps) {
-        // A pinned app is shown even when it belongs to the settings category (Wi-Fi is one)
-        if (!app.hidden && app.compatible && (!app.settings || is_pinned(app.id))) {
-            add(app, app.favourite);
+        if (!isHomeAppVisible(app) || app.settings) {
+            continue;
         }
+        if (app.id == SETTINGS_APP_ID || app.id == GROK_BOT_APP_ID || app.id == WIFI_APP_ID) {
+            continue;
+        }
+        rest.push_back(&app);
     }
-
-    const auto rank = [&pinned](const HomeItem& item) {
-        const auto found = ::std::find(pinned.begin(), pinned.end(), item.id);
-        return found == pinned.end() ? pinned.size() : static_cast<size_t>(found - pinned.begin());
-    };
-    ::std::sort(items.begin() + 1, items.end(), [&rank](const HomeItem& a, const HomeItem& b) {
-        const size_t rank_a = rank(a);
-        const size_t rank_b = rank(b);
-        if (rank_a != rank_b) {
-            return rank_a < rank_b;
+    ::std::ranges::sort(rest, [](const HomeApp* a, const HomeApp* b) {
+        if (a->favourite != b->favourite) {
+            return a->favourite;
         }
-        if (a.highlighted != b.highlighted) {
-            return a.highlighted;
-        }
-        return a.name < b.name;
+        return a->name < b->name;
     });
+    for (const auto* app : rest) {
+        add(*app);
+    }
     return items;
 }
 
-/** One always-visible shortcut in the dock. The settings slot is a mode switch, not an app. */
+/** One always-visible shortcut in the dock. */
 struct DockItem {
     const char* id;
-    const char* name;
-    const char* icon;
-    bool settings;
 };
 
 /**
- * @return the dock slots that the device can show, in their fixed order. Wi-Fi, Files and the
- * Grok Bot carousel are omitted when they are not installed or compatible; Settings is always
- * present. No empty slots are returned.
+ * @return the dock slots that the device can show, in their fixed order. Missing or incompatible
+ * apps are omitted without leaving a gap. Settings is always installed, but is checked like the
+ * others so a build without the hub cannot draw a dead slot.
  */
 inline std::vector<DockItem> resolveDockItems(const std::vector<HomeApp>& apps) {
-    static constexpr DockItem SLOTS[] = {
-        { "tactility.wifimanage", "Wi-Fi", LVGL_ICON_SHARED_WIFI, false },
-        { HOME_MODE_ITEM_ID, "Settings", LVGL_ICON_SHARED_SETTINGS, true },
-        { "tactility.files", "Files", LVGL_ICON_SHARED_FOLDER, false },
-        { "one.grokbot.carousel", "Grok Bot", LVGL_ICON_SHARED_FORUM, false },
+    static constexpr const char* SLOTS[] = {
+        GROK_BOT_APP_ID,
+        "tactility.files",
+        "tactility.camera",
+        SETTINGS_APP_ID,
     };
 
     std::vector<DockItem> items;
-    for (const auto& slot : SLOTS) {
-        if (slot.settings) {
-            items.push_back(slot);
-            continue;
-        }
+    for (const auto* id : SLOTS) {
         for (const auto& app : apps) {
-            if (!app.hidden && app.compatible && app.id == slot.id) {
-                items.push_back(slot);
+            if (app.id == id && isHomeAppVisible(app)) {
+                items.push_back(DockItem { id });
                 break;
             }
         }
@@ -151,4 +127,4 @@ inline std::vector<DockItem> resolveDockItems(const std::vector<HomeApp>& apps) 
 /** Reads the installed apps and their compatibility for the Home. */
 std::vector<HomeApp> collectHomeApps();
 
-}
+} // namespace tt::app::launcher

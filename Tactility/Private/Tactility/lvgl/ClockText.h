@@ -53,4 +53,22 @@ inline uint32_t millisToNextMinute(const tm& local) {
     return seconds * 1000U;
 }
 
+/** The two-line date that the v2 Home and lock show: a weekday and a day/month. */
+struct LongDate {
+    /** "Friday", or empty before the clock is set */
+    char weekday[16];
+    /** "24 October", or empty before the clock is set */
+    char date[24];
+};
+
+inline LongDate formatLongDate(const tm& local) {
+    LongDate result = {};
+    if (local.tm_year < (2025 - 1900)) {
+        return result;
+    }
+    std::strftime(result.weekday, sizeof(result.weekday), "%A", &local);
+    std::strftime(result.date, sizeof(result.date), "%d %B", &local);
+    return result;
+}
+
 }

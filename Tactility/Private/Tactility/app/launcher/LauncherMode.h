@@ -24,6 +24,13 @@ struct LauncherMode {
 /** Reads the favourites from their file into memory. File operation, see <tactility/file_ops.h>. */
 void loadFavourites(void* context);
 
+/**
+ * Toggles the favourite flag of an app and queues saving the favourites. File-I/O free, so it can
+ * run from a widget event; the caller repopulates its grid.
+ * @return false while the favourites are still being loaded
+ */
+bool toggleFavourite(const char* appId);
+
 extern const LauncherMode APPS_MODE;
 extern const LauncherMode SETTINGS_MODE;
 
