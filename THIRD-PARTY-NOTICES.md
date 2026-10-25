@@ -55,6 +55,14 @@ Website: https://fonts.google.com/icons
 
 License: Multiple (SIL Open Font License, Apache License, Ubuntu Font License): https://developers.google.com/fonts/faq 
 
+### Inter
+
+The Inter typeface (400 and 500) is used for the v2 mobile type scale.
+
+Website: https://github.com/rsms/inter
+
+License: [SIL Open Font License 1.1](https://github.com/rsms/inter/blob/master/LICENSE.txt)
+
 ### Timezones CSV
 
 Website: https://github.com/nayarsystems/posix_tz_db

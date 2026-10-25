@@ -71,6 +71,10 @@ constexpr TextFontDefinition TEXT_FONTS[] = {
     { FONT_SIZE_SMALL, "small" },
     { FONT_SIZE_DEFAULT, "default" },
     { FONT_SIZE_LARGE, "large" },
+#if defined(CONFIG_TT_MOBILE_HOME)
+    { FONT_SIZE_SECONDARY, "secondary" },
+    { FONT_SIZE_DENSE, "dense" },
+#endif
 };
 
 static const IconFontDefinition ICON_FONTS[] = {
@@ -149,7 +153,14 @@ static FontSource getSource(const std::string& customPath, const uint8_t* system
 }
 
 static FontSource getTextSource(const FontConfiguration& configuration) {
+#if defined(CONFIG_TT_MOBILE_HOME)
+    // A v2 build ships every text role as a generated bitmap font, so no TTF needs to be embedded
+    // for runtime generation. The generated table is the only source.
+    (void)configuration;
+    return { { "", nullptr, 0 }, TT_TEXT_FONT_VERSION, [] { return std::vector<uint32_t>(); }, false };
+#else
     return getSource(configuration.regularFontPath, asset_fonts_AdwaitaSans_ttf, asset_fonts_AdwaitaSans_ttf_size, TT_TEXT_FONT_VERSION);
+#endif
 }
 
 static FontSource getMonoSource(const FontConfiguration& configuration) {
@@ -250,6 +261,10 @@ static BinFont* load(const FontRequest& request) {
         }
         LOG_E(TAG, "Failed to open %s from the firmware", request.fileName.c_str());
     }
+    if (request.ttf.data == nullptr && request.ttf.path.empty()) {
+        LOG_E(TAG, "%s is not part of the firmware and has no TTF source", request.fileName.c_str());
+        return nullptr;
+    }
     warnWhenInRam(request);
     return loadOrGenerateFont(request.fileName, request.ttf, request.size, request.bpp, request.getCodepoints);
 }
@@ -259,6 +274,10 @@ static bool ensureCached(const FontRequest& request) {
     size_t size = 0;
     if (findGeneratedFont(request.fileName, data, size)) {
         return true;
+    }
+    if (request.ttf.data == nullptr && request.ttf.path.empty()) {
+        LOG_E(TAG, "%s is not part of the firmware and has no TTF source", request.fileName.c_str());
+        return false;
     }
     warnWhenInRam(request);
     return ensureCachedFont(request.fileName, request.ttf, request.size, request.bpp, request.getCodepoints);

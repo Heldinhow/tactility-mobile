@@ -100,15 +100,29 @@ def get_jobs(font_size: int, bpp: int, mobile_home: bool) -> list:
         return f"{prefix}{name}_{size}_{bpp}bpp_{version:08x}.bin"
 
     jobs = []
-    sans = os.path.join(FONTS, "AdwaitaSans.ttf")
-    text_fonts = [("small", scale(font_size, 0.75)), ("default", font_size), ("large", scale(font_size, 1.25))]
-    for name, size in text_fonts:
-        jobs.append((file_name("text_", name, size, text_version["TT_TEXT_FONT_VERSION"]), sans, size, None))
+    version = text_version["TT_TEXT_FONT_VERSION"]
     if mobile_home:
+        # v2 type scale: fixed sizes, Inter 400 for the 12px caption and Inter 500 for the rest.
+        # The subsets are build inputs in Tactility/Fonts, not runtime assets.
+        inter = os.path.join(ROOT, "Tactility", "Fonts")
+        text_fonts = [
+            ("small", 12, "Inter-Regular-Ascii.ttf"),
+            ("secondary", 13, "Inter-Medium-Ascii.ttf"),
+            ("dense", 14, "Inter-Medium-Ascii.ttf"),
+            ("default", 15, "Inter-Medium-Latin1.ttf"),
+            ("large", 22, "Inter-Medium-Ascii.ttf"),
+        ]
+        for name, size, ttf in text_fonts:
+            jobs.append((file_name("text_", name, size, version), os.path.join(inter, ttf), size, None))
         # The Home and lock clocks only need digits and separators, so this stays small
-        clock_size = scale(font_size, 2.5)
+        clock_size = 48
         clock_codepoints = [ord(glyph) for glyph in "0123456789:- "]
-        jobs.append((file_name("text_", "clock", clock_size, text_version["TT_TEXT_FONT_VERSION"]), sans, clock_size, clock_codepoints))
+        jobs.append((file_name("text_", "clock", clock_size, version), os.path.join(inter, "Inter-Medium-Clock.ttf"), clock_size, clock_codepoints))
+    else:
+        sans = os.path.join(FONTS, "AdwaitaSans.ttf")
+        text_fonts = [("small", scale(font_size, 0.75)), ("default", font_size), ("large", scale(font_size, 1.25))]
+        for name, size in text_fonts:
+            jobs.append((file_name("text_", name, size, version), sans, size, None))
     jobs.append((file_name("mono_", "mono", font_size, text_version["TT_MONO_FONT_VERSION"]), os.path.join(FONTS, "AdwaitaMono.ttf"), font_size, None))
 
     shared_size = scale_double(font_size, 1.25)

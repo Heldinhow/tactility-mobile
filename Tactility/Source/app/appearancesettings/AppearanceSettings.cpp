@@ -35,6 +35,10 @@
 #include <format>
 #include <string>
 
+#ifdef ESP_PLATFORM
+#include <sdkconfig.h>
+#endif
+
 namespace tt::app::appearancesettings {
 
 constexpr auto* TAG = "AppearanceSettings";
@@ -733,6 +737,7 @@ void createWidgets(lv_obj_t* parent, void* userData) {
     }
     createSystemBarsCard(content, ctx);
 
+#if !defined(CONFIG_TT_MOBILE_HOME)
     if (lvgl::isFontChangeSupported()) {
         auto* fonts_card = createSection(content, "Fonts");
         auto* font_size_row = createRow(fonts_card);
@@ -772,6 +777,7 @@ void createWidgets(lv_obj_t* parent, void* userData) {
         lv_label_set_text(ctx->errorLabel, "Failed to create the fonts. Check that the selected files are TrueType fonts.");
         lv_obj_set_style_text_color(ctx->errorLabel, lv_palette_main(LV_PALETTE_RED), LV_STATE_DEFAULT);
     }
+#endif
 
     updateWidgets(ctx);
 
