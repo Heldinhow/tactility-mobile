@@ -112,11 +112,18 @@ static void runDevAction(int index) {
             case 4:
                 startApp("tactility.files");
                 break;
-            case 5:
+            case 5: {
+                // The mock radio makes the panel's Wi-Fi tile show its on style
+                Device* device = nullptr;
+                if (device_get_first_by_type(&WIFI_TYPE, &device) == ERROR_NONE) {
+                    wifi_set_radio_on(device);
+                    device_put(device);
+                }
                 startApp("tactility.files");
                 std::this_thread::sleep_for(800ms);
                 tt::lvgl::systemMenuShow();
                 break;
+            }
             case 6:
                 startApp("tactility.wifimanage");
                 std::this_thread::sleep_for(300ms);

@@ -307,7 +307,7 @@ No notifications, no power/location/mesh tiles; persistence is unchanged.
 
 **Blocked by:** RV2-01, RV2-03, RV2-04, RV2-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Test seam:** No pure seam; the simulator capture plus the owner checklist.
 
