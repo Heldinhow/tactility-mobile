@@ -16,6 +16,8 @@ enum LvglFontSize {
     FONT_SIZE_SECONDARY,
     /** v2 only: generated on mobile builds, 14 px */
     FONT_SIZE_DENSE,
+    /** Number of text roles; keep last */
+    FONT_SIZE_COUNT,
 };
 
 #define LVGL_ICON_FONT_SHARED LVGL_ICON_FONT_SHARED_DEFAULT
