@@ -36,6 +36,25 @@ TEST_CASE("RSSI maps to the three signal buckets") {
     CHECK_EQ(rssiBucket(-90), 1);
 }
 
+TEST_CASE("file sizes use bytes, whole kilobytes and whole megabytes") {
+    CHECK_EQ(formatFileSize(0), "0 B");
+    CHECK_EQ(formatFileSize(512), "512 B");
+    CHECK_EQ(formatFileSize(1024), "1 KB");
+    CHECK_EQ(formatFileSize(2048), "2 KB");
+    CHECK_EQ(formatFileSize(18432), "18 KB");
+    CHECK_EQ(formatFileSize(1024 * 1024), "1 MB");
+    CHECK_EQ(formatFileSize(1024 * 1024 + 1), "2 MB");
+}
+
+TEST_CASE("item counts and the footer use singular forms") {
+    CHECK_EQ(formatItemCount(0), "0 items");
+    CHECK_EQ(formatItemCount(1), "1 item");
+    CHECK_EQ(formatItemCount(12), "12 items");
+    CHECK_EQ(formatFolderFooter(0, 0), "0 items - 0 folders");
+    CHECK_EQ(formatFolderFooter(1, 1), "1 item - 1 folder");
+    CHECK_EQ(formatFolderFooter(6, 2), "6 items - 2 folders");
+}
+
 TEST_CASE("the timeout uses seconds below a minute and whole minutes above") {
     CHECK_EQ(formatTimeout(0), "Never");
     CHECK_EQ(formatTimeout(15000), "15 s");

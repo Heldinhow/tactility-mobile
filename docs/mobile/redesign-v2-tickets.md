@@ -409,7 +409,7 @@ the menu. Only the list scrolls. Non-mobile keeps the grid.
 
 **Blocked by:** RV2-01, RV2-03, RV2-04, RV2-05, RV2-06.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Test seam:** Seam 2 (mobile formatting), extended with the file meta and the footer count (singular
 and plural).

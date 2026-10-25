@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -76,6 +77,44 @@ inline std::string formatTimeout(uint32_t milliseconds) {
     } else {
         std::snprintf(text, sizeof(text), "%u min", static_cast<unsigned>((milliseconds + 59999U) / 60000U));
     }
+    return text;
+}
+
+/** @return a short file size: "0 B", "512 B", "2 KB", "18 KB", "3 MB" */
+inline std::string formatFileSize(uint64_t bytes) {
+    char text[24];
+    if (bytes < 1024) {
+        std::snprintf(text, sizeof(text), "%u B", static_cast<unsigned>(bytes));
+    } else if (bytes < 1024ULL * 1024ULL) {
+        std::snprintf(text, sizeof(text), "%u KB", static_cast<unsigned>((bytes + 1023) / 1024));
+    } else {
+        std::snprintf(text, sizeof(text), "%u MB", static_cast<unsigned>((bytes + 1024ULL * 1024ULL - 1) / (1024ULL * 1024ULL)));
+    }
+    return text;
+}
+
+/** @return "1 item" or "N items", for a folder's row meta */
+inline std::string formatItemCount(size_t count) {
+    char text[24];
+    std::snprintf(text, sizeof(text), "%u item%s", static_cast<unsigned>(count), count == 1 ? "" : "s");
+    return text;
+}
+
+/**
+ * @return "N items - M folders" with singular forms, for the Files footer. The ASCII hyphen
+ * replaces the mockup's middle dot because the 12 px subset has no Latin-1 glyphs.
+ */
+inline std::string formatFolderFooter(size_t items, size_t folders) {
+    char text[48];
+    std::snprintf(
+        text,
+        sizeof(text),
+        "%u item%s - %u folder%s",
+        static_cast<unsigned>(items),
+        items == 1 ? "" : "s",
+        static_cast<unsigned>(folders),
+        folders == 1 ? "" : "s"
+    );
     return text;
 }
 
