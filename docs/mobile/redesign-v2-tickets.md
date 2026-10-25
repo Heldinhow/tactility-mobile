@@ -356,7 +356,7 @@ in half. Input dialogs keep their layout and inherit chrome, buttons and type.
 
 **Blocked by:** RV2-01, RV2-04, RV2-05.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Test seam:** No pure seam; a simulator capture of an existing dialog.
 

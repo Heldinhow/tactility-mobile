@@ -1,5 +1,14 @@
 #include <Tactility/app/inputdialog/InputDialog.h>
 
+#ifdef ESP_PLATFORM
+#include <sdkconfig.h>
+#endif
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+#include <Tactility/lvgl/MobileTheme.h>
+#include <Tactility/lvgl/MobileUi.h>
+#endif
+
 #include <app/event.h>
 #include <app/manager.h>
 #include <app/manifest.h>
@@ -84,10 +93,18 @@ void onButtonPressed(lv_event_t* e) {
     }
 }
 
-void createButton(Context* ctx, lv_obj_t* parent, const std::string& text, lv_obj_t* textarea) {
+void createButton(Context* ctx, lv_obj_t* parent, const std::string& text, lv_obj_t* textarea, bool primary) {
     lv_obj_t* button = lv_button_create(parent);
     lv_obj_t* button_label = lv_label_create(button);
     lv_obj_align(button_label, LV_ALIGN_CENTER, 0, 0);
+#if defined(CONFIG_TT_MOBILE_HOME)
+    tt::lvgl::mobile::styleButton(button, primary);
+    lv_obj_set_style_text_color(
+        button_label,
+        tt::lvgl::mobile::color(primary ? tt::lvgl::mobile::COLOR_ON_ACCENT : tt::lvgl::mobile::COLOR_TEXT),
+        LV_STATE_DEFAULT
+    );
+#endif
     lv_label_set_text(button_label, text.c_str());
     auto* btnCtx = new ButtonContext { ctx, textarea };
     lv_obj_add_event_cb(button, onButtonPressed, LV_EVENT_SHORT_CLICKED, btnCtx);
@@ -130,8 +147,8 @@ void createWidgets(lv_obj_t* parent, void* userData) {
     lv_obj_set_style_pad_column(button_wrapper, 12, LV_STATE_DEFAULT);
     lv_obj_set_style_pad_ver(button_wrapper, 6, LV_STATE_DEFAULT);
 
-    createButton(ctx, button_wrapper, "OK", textarea);
-    createButton(ctx, button_wrapper, "Cancel", nullptr);
+    createButton(ctx, button_wrapper, "OK", textarea, true);
+    createButton(ctx, button_wrapper, "Cancel", nullptr, false);
 }
 
 int32_t appMain(int argc, char* argv[]) {

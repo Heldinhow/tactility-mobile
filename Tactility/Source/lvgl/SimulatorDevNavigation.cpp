@@ -146,7 +146,7 @@ static void runDevAction(int index) {
                     0,
                     "Forget network?",
                     "You'll need the password to join HomeNet again.",
-                    { "Cancel", "Forget" }
+                    { "Forget", "Cancel" }
                 );
                 break;
             case 9:
