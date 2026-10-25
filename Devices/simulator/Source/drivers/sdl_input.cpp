@@ -109,7 +109,12 @@ uint32_t keycode_to_key(SDL_Keycode sdl_key, bool shift) {
  */
 /** Takes the snapshot; the caller runs on the LVGL task or holds the LVGL lock. */
 void take_screenshot_now() {
-    lv_draw_buf_t* snapshot = lv_snapshot_take(lv_screen_active(), LV_COLOR_FORMAT_RGB888);
+    // The lock lives on the top layer; overlays in the app layer are part of the active screen
+    lv_obj_t* target = lv_layer_top();
+    if (lv_obj_get_child_count(target) == 0) {
+        target = lv_screen_active();
+    }
+    lv_draw_buf_t* snapshot = lv_snapshot_take(target, LV_COLOR_FORMAT_RGB888);
     if (snapshot != nullptr) {
         const char* path = getenv("TACTILITY_SIM_SCREENSHOT");
         if (path == nullptr) {

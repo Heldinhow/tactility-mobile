@@ -25,7 +25,10 @@
 
 
 #include <tactility/delay.h>
+#include <tactility/device.h>
+#include <tactility/drivers/wifi.h>
 #include <tactility/error.h>
+#include <tactility/log.h>
 #include <tactility/log.h>
 
 #include <cstdlib>
@@ -73,11 +76,19 @@ void ignoreUnlock(void*) {}
 
 void showLock() {
     static tt::service::displayidle::LockWidgets* lock = nullptr;
+    // The mock radio is cheap to turn on and makes the lock's Wi-Fi indicator visible
+    Device* device = nullptr;
+    if (device_get_first_by_type(&WIFI_TYPE, &device) == ERROR_NONE) {
+        wifi_set_radio_on(device);
+        device_put(device);
+    }
     tt::service::displayidle::lockScreenSetUnlockCallback(lock, ignoreUnlock, nullptr);
     // The overlay is built on the LVGL task with the lock held, like the service does
     lvgl_lock();
-    tt::service::displayidle::lockScreenShow(lock);
+    const bool shown = tt::service::displayidle::lockScreenShow(lock);
+    const bool visible = tt::service::displayidle::lockScreenIsVisible(lock);
     lvgl_unlock();
+    LOG_I("sim_dev", "lock shown=%d visible=%d", (int)shown, (int)visible);
 }
 
 }
@@ -166,7 +177,9 @@ static void runActionList(void* context) {
         const uint32_t delay = delay_text != nullptr ? static_cast<uint32_t>(atoi(delay_text)) : 0;
         const uint32_t now = lv_tick_get();
         const uint32_t wait = delay > now ? delay - now : 100;
+        LOG_I("sim_dev", "screenshot in %u ms", (unsigned)wait);
         lv_timer_create([](lv_timer_t* timer) {
+            LOG_I("sim_dev", "screenshot");
             simulator_take_screenshot_now();
             lv_timer_delete(timer);
         }, wait, nullptr);

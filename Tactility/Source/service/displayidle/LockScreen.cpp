@@ -8,6 +8,9 @@
 
 #include <Tactility/lvgl/ClockText.h>
 #include <Tactility/lvgl/Fonts.h>
+#include <Tactility/lvgl/MobileIcons.h>
+#include <Tactility/lvgl/MobileTheme.h>
+#include <Tactility/lvgl/MobileUi.h>
 #include <Tactility/service/displayidle/LockScreen.h>
 #include <Tactility/settings/Time.h>
 
@@ -17,7 +20,10 @@
 #include <lvgl/lvgl.h>
 
 #include <tactility/Memory.hpp>
+#include <tactility/device.h>
+#include <tactility/drivers/wifi.h>
 
+#include <cstdio>
 #include <cstring>
 #include <ctime>
 
@@ -34,19 +40,21 @@ struct LockWidgets {
     lv_group_t* group = nullptr;
     lv_group_t* previous_group = nullptr;
     ClockFont* clockFont = nullptr;
-    char date_text[32] = {};
+    char date_text[48] = {};
     LockUnlockCallback callback = nullptr;
     void* context = nullptr;
 };
 
 namespace {
 
+namespace mobile = tt::lvgl::mobile;
+
 void updateClock(LockWidgets* lock) {
     const time_t now = time(nullptr);
     const tm* local = localtime(&now);
     if (local == nullptr) {
         lv_label_set_text(lock->clock, "--:--");
-        lv_obj_set_hidden(lock->ampm, true);
+        lv_obj_add_flag(lock->ampm, LV_OBJ_FLAG_HIDDEN);
         return;
     }
 
@@ -54,12 +62,17 @@ void updateClock(LockWidgets* lock) {
     lv_label_set_text(lock->clock, text.time);
     if (text.meridiem != nullptr) {
         lv_label_set_text(lock->ampm, text.meridiem);
-        lv_obj_set_hidden(lock->ampm, false);
+        lv_obj_remove_flag(lock->ampm, LV_OBJ_FLAG_HIDDEN);
     } else {
-        lv_obj_set_hidden(lock->ampm, true);
+        lv_obj_add_flag(lock->ampm, LV_OBJ_FLAG_HIDDEN);
     }
-    if (strcmp(lock->date_text, text.date) != 0) {
-        strncpy(lock->date_text, text.date, sizeof(lock->date_text) - 1);
+
+    // The lock shows one line: "Friday, 24 October"
+    const auto long_date = lvgl::formatLongDate(*local);
+    char date[48];
+    std::snprintf(date, sizeof(date), "%s, %s", long_date.weekday, long_date.date);
+    if (strcmp(lock->date_text, date) != 0) {
+        strncpy(lock->date_text, date, sizeof(lock->date_text) - 1);
         lock->date_text[sizeof(lock->date_text) - 1] = '\0';
         lv_label_set_text(lock->date, lock->date_text);
     }
@@ -112,6 +125,22 @@ void consumePressedPointers() {
             lv_indev_wait_release(indev);
         }
     }
+}
+
+/** The 16 px Wi-Fi indicator in the top-right, only while the radio is on. */
+void createWifiIndicator(lv_obj_t* root) {
+    Device* device = nullptr;
+    if (device_get_first_by_type(&WIFI_TYPE, &device) != ERROR_NONE) {
+        return;
+    }
+    WifiRadioState state = WIFI_RADIO_STATE_OFF;
+    wifi_get_radio_state(device, &state);
+    device_put(device);
+    if (state != WIFI_RADIO_STATE_ON && state != WIFI_RADIO_STATE_ON_PENDING) {
+        return;
+    }
+    lv_obj_t* icon = mobile::createIcon(root, MobileIcon::Wifis, mobile::COLOR_TEXT_2);
+    lv_obj_align(icon, LV_ALIGN_TOP_RIGHT, -12, 4);
 }
 
 }
@@ -172,7 +201,13 @@ bool lockScreenShow(LockWidgets*& lock) {
     }
     lock->root = root;
     lv_obj_set_size(root, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(root, lv_obj_get_style_bg_color(lv_screen_active(), LV_PART_MAIN), LV_STATE_DEFAULT);
+    lv_obj_set_pos(root, 0, 0);
+    // Two stops: bg until 45%, then a blend to accent-soft at the bottom
+    lv_obj_set_style_bg_color(root, mobile::color(mobile::COLOR_BG), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_grad_color(root, mobile::color(mobile::COLOR_ACCENT_SOFT), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_grad_dir(root, LV_GRAD_DIR_VER, LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_main_stop(root, 115, LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_grad_stop(root, 255, LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(root, LV_OPA_COVER, LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(root, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_radius(root, 0, LV_STATE_DEFAULT);
@@ -180,51 +215,41 @@ bool lockScreenShow(LockWidgets*& lock) {
     lv_obj_set_scrollable(root, false);
     lv_obj_set_clickable(root, true);
 
+    createWifiIndicator(root);
+
     auto* clock_row = lv_obj_create(root);
     lv_obj_remove_style_all(clock_row);
-    lv_obj_set_size(clock_row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_size(clock_row, LV_SIZE_CONTENT, 48);
     lv_obj_set_flex_flow(clock_row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(clock_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
-    lv_obj_set_style_pad_column(clock_row, LV_DPX(4), LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_column(clock_row, 4, LV_STATE_DEFAULT);
     lv_obj_set_scrollable(clock_row, false);
-    lv_obj_align(clock_row, LV_ALIGN_CENTER, 0, -LV_DPX(20));
+    lv_obj_align(clock_row, LV_ALIGN_TOP_MID, 0, 100);
 
     lock->clockFont = lvgl::loadClockFont();
     const lv_font_t* clock_font = lock->clockFont != nullptr
         ? lock->clockFont->lvglFont
         : lvgl_get_text_font(FONT_SIZE_LARGE);
 
-    lock->clock = lv_label_create(clock_row);
+    lock->clock = mobile::createLabel(clock_row, "--:--", FONT_SIZE_LARGE, mobile::COLOR_TEXT);
     lv_obj_set_style_text_font(lock->clock, clock_font, LV_STATE_DEFAULT);
-    lv_label_set_text(lock->clock, "--:--");
 
-    lock->ampm = lv_label_create(clock_row);
-    lv_obj_set_style_text_font(lock->ampm, lvgl_get_text_font(FONT_SIZE_SMALL), LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_bottom(lock->ampm, LV_DPX(3), LV_STATE_DEFAULT);
-    lv_obj_set_hidden(lock->ampm, true);
+    lock->ampm = mobile::createLabel(clock_row, "", FONT_SIZE_SECONDARY, mobile::COLOR_TEXT);
+    lv_obj_set_style_pad_bottom(lock->ampm, 8, LV_STATE_DEFAULT);
+    lv_obj_add_flag(lock->ampm, LV_OBJ_FLAG_HIDDEN);
 
-    lock->date = lv_label_create(root);
-    lv_obj_set_style_text_font(lock->date, lvgl_get_text_font(FONT_SIZE_SMALL), LV_STATE_DEFAULT);
-    lv_obj_set_style_text_opa(lock->date, LV_OPA_70, LV_STATE_DEFAULT);
-    lv_obj_update_layout(root);
-    lv_obj_align_to(lock->date, clock_row, LV_ALIGN_OUT_BOTTOM_MID, 0, LV_DPX(6));
+    lock->date = mobile::createLabel(root, "", FONT_SIZE_DEFAULT, mobile::COLOR_TEXT_2);
+    lv_obj_set_width(lock->date, LV_PCT(100));
+    lv_obj_set_style_text_align(lock->date, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
+    lv_obj_align(lock->date, LV_ALIGN_TOP_MID, 0, 154);
 
-    auto* hint = lv_obj_create(root);
-    lv_obj_remove_style_all(hint);
-    lv_obj_set_size(hint, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_flex_flow(hint, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(hint, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(hint, LV_DPX(4), LV_STATE_DEFAULT);
-    lv_obj_set_scrollable(hint, false);
-    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -LV_DPX(24));
+    lv_obj_t* hint = mobile::createLabel(root, "Swipe up to unlock", FONT_SIZE_SMALL, mobile::COLOR_TEXT_2);
+    lv_obj_set_width(hint, LV_PCT(100));
+    lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
+    lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 276);
 
-    auto* hint_icon = lv_label_create(hint);
-    lv_obj_set_style_text_font(hint_icon, lvgl_get_shared_icon_default_font(), LV_STATE_DEFAULT);
-    lv_label_set_text(hint_icon, LVGL_ICON_SHARED_KEYBOARD_ARROW_UP);
-
-    auto* hint_text = lv_label_create(hint);
-    lv_obj_set_style_text_font(hint_text, lvgl_get_text_font(FONT_SIZE_SMALL), LV_STATE_DEFAULT);
-    lv_label_set_text(hint_text, "Swipe up");
+    lv_obj_t* bar = mobile::createGestureBar(root);
+    lv_obj_align(bar, LV_ALIGN_TOP_MID, 0, 302);
 
     updateClock(lock);
     const time_t now = time(nullptr);

@@ -281,7 +281,7 @@ swipe caption at y=276 and the 36x4 gesture bar at y=302. Behaviour is unchanged
 
 **Blocked by:** RV2-01, RV2-03, RV2-04, RV2-05, RV2-08.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Test seam:** No pure seam; the simulator capture and the on-device banding check.
 
