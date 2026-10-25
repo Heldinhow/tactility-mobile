@@ -204,7 +204,7 @@ static void runDevAction(int index) {
             case 9:
                 startApp("tactility.wifimanage");
                 std::this_thread::sleep_for(700ms);
-                tt::app::wificonnect::start("Cafe_5G");
+                tt::app::wificonnect::start("Cafe_5G", "hunter2");
                 // The app's window is built after this sequence, so the keyboard is shown by a
                 // timer on the LVGL task rather than from here
                 lvgl_lock();

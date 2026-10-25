@@ -2,6 +2,10 @@
 
 #include <Tactility/Tactility.h>
 
+#include <Tactility/lvgl/MobileIcons.h>
+#include <Tactility/lvgl/MobileTheme.h>
+#include <Tactility/lvgl/MobileUi.h>
+
 #include <app/event.h>
 #include <app/manager.h>
 #include <app/manifest.h>
@@ -25,6 +29,10 @@
 
 #include <lvgl.h>
 #include <cstring>
+
+#ifdef ESP_PLATFORM
+#include <sdkconfig.h>
+#endif
 
 namespace tt::app::wificonnect {
 
@@ -55,6 +63,13 @@ struct Context {
     lv_obj_t* connecting_spinner = nullptr;
     lv_obj_t* connection_error = nullptr;
 
+    /** The 240x320 password screen instead of the generic form */
+    bool v2 = false;
+    lv_obj_t* v2_field = nullptr;
+    lv_obj_t* v2_caption = nullptr;
+    lv_obj_t* v2_error = nullptr;
+    lv_obj_t* v2_join = nullptr;
+
     // Set once in appMain() before subscribing, left null if this device has no WiFi driver
     Device* wifiDevice = nullptr;
     WifiEventSubscription wifiEventSub {};
@@ -64,6 +79,7 @@ struct Context {
 void updateView(Context* ctx);
 void resetErrors(Context* ctx);
 void setLoading(Context* ctx, bool loading);
+void onConnectPressed(lv_event_t* event);
 
 void onBackPressed(lv_event_t* event) {
     auto* ctx = static_cast<Context*>(lv_event_get_user_data(event));
@@ -104,25 +120,225 @@ void onWifiEvent(Context* ctx, WifiEvent event) {
     }
 }
 
+#if defined(CONFIG_TT_MOBILE_HOME)
+
+namespace mobile = tt::lvgl::mobile;
+
+bool isV2Screen(const Context* ctx) {
+    lv_display_t* display = lv_display_get_default();
+    return !ctx->initialSsid.empty() && display != nullptr &&
+        lv_display_get_horizontal_resolution(display) == 240 &&
+        lv_display_get_vertical_resolution(display) == 320;
+}
+
+void updateV2Join(Context* ctx) {
+    if (!ctx->v2 || ctx->v2_join == nullptr || ctx->password_textarea == nullptr) {
+        return;
+    }
+    const bool available = lv_textarea_get_text(ctx->password_textarea)[0] != '\0' && !ctx->connecting;
+    lv_obj_set_style_bg_color(ctx->v2_join, mobile::color(available ? mobile::COLOR_ACCENT : mobile::COLOR_SURFACE_2), LV_STATE_DEFAULT);
+    lv_obj_t* label = lv_obj_get_child(ctx->v2_join, 0);
+    if (label != nullptr) {
+        lv_obj_set_style_text_color(label, mobile::color(available ? mobile::COLOR_ON_ACCENT : mobile::COLOR_TEXT_3), LV_STATE_DEFAULT);
+    }
+}
+
+void showV2Message(Context* ctx, const char* text, uint32_t tint) {
+    if (ctx->v2_error == nullptr) {
+        return;
+    }
+    if (ctx->v2_caption != nullptr) {
+        lv_obj_set_hidden(ctx->v2_caption, true);
+    }
+    lv_obj_set_style_text_color(ctx->v2_error, mobile::color(tint), LV_STATE_DEFAULT);
+    lv_label_set_text(ctx->v2_error, text);
+    lv_obj_set_hidden(ctx->v2_error, false);
+}
+
+void hideV2Message(Context* ctx) {
+    if (ctx->v2_error != nullptr) {
+        lv_obj_set_hidden(ctx->v2_error, true);
+    }
+    if (ctx->v2_caption != nullptr) {
+        lv_obj_set_hidden(ctx->v2_caption, false);
+    }
+}
+
+void onV2PasswordChanged(lv_event_t* event) {
+    updateV2Join(static_cast<Context*>(lv_event_get_user_data(event)));
+}
+
+void onV2EyePressed(lv_event_t* event) {
+    auto* ctx = static_cast<Context*>(lv_event_get_user_data(event));
+    if (ctx->password_textarea == nullptr) {
+        return;
+    }
+    lv_textarea_set_password_mode(ctx->password_textarea, !lv_textarea_get_password_mode(ctx->password_textarea));
+    lv_group_focus_obj(ctx->password_textarea);
+}
+
+void onV2FieldFocused(lv_event_t* event) {
+    auto* ctx = static_cast<Context*>(lv_event_get_user_data(event));
+    if (ctx->v2_field != nullptr) {
+        lv_obj_set_style_border_color(ctx->v2_field, mobile::color(mobile::COLOR_ACCENT), LV_STATE_DEFAULT);
+    }
+}
+
+void onV2FieldDefocused(lv_event_t* event) {
+    auto* ctx = static_cast<Context*>(lv_event_get_user_data(event));
+    if (ctx->v2_field != nullptr) {
+        lv_obj_set_style_border_color(ctx->v2_field, mobile::color(mobile::COLOR_LINE), LV_STATE_DEFAULT);
+    }
+}
+
+void createV2Widgets(Context* ctx, lv_obj_t* parent) {
+    auto* toolbar = lvgl_toolbar_create(parent, ctx->initialSsid.c_str());
+    lvgl_toolbar_set_nav_image(toolbar, mobileIconGet(MobileIcon::Back), onBackPressed, ctx);
+
+    auto* content = lv_obj_create(parent);
+    lv_obj_set_width(content, LV_PCT(100));
+    lv_obj_set_flex_grow(content, 1);
+    lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(content, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(content, 0, LV_STATE_DEFAULT);
+    lv_obj_set_scrollable(content, false);
+
+    auto* field = lv_obj_create(content);
+    ctx->v2_field = field;
+    lv_obj_set_pos(field, 12, 8);
+    lv_obj_set_size(field, 160, 40);
+    lv_obj_set_style_bg_color(field, mobile::color(mobile::COLOR_SURFACE), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(field, LV_OPA_COVER, LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(field, mobile::RADIUS_CONTROL, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(field, 1, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_color(field, mobile::color(mobile::COLOR_ACCENT), LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(field, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_clip_corner(field, true, LV_STATE_DEFAULT);
+    lv_obj_set_scrollable(field, false);
+
+    auto* textarea = lv_textarea_create(field);
+    ctx->password_textarea = textarea;
+    // The theme's light input background is not part of the v2 field
+    lv_obj_remove_style_all(textarea);
+    lv_obj_set_scrollbar_mode(textarea, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_pos(textarea, 12, 0);
+    lv_obj_set_size(textarea, 108, 40);
+    lv_textarea_set_one_line(textarea, true);
+    lv_textarea_set_password_mode(textarea, true);
+    lv_obj_set_style_bg_opa(textarea, LV_OPA_TRANSP, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(textarea, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(textarea, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(textarea, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(textarea, lvgl_get_text_font(FONT_SIZE_DEFAULT), LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(textarea, mobile::color(mobile::COLOR_TEXT), LV_STATE_DEFAULT);
+    // The design's caret is a static 2x18 accent bar
+    lv_obj_set_style_anim_duration(textarea, 0, LV_PART_CURSOR);
+    lv_obj_set_style_width(textarea, 2, LV_PART_CURSOR);
+    lv_obj_set_style_height(textarea, 18, LV_PART_CURSOR);
+    lv_obj_set_style_bg_color(textarea, mobile::color(mobile::COLOR_ACCENT), LV_PART_CURSOR);
+    lv_obj_set_style_bg_opa(textarea, LV_OPA_COVER, LV_PART_CURSOR);
+    lv_obj_add_event_cb(textarea, onV2PasswordChanged, LV_EVENT_VALUE_CHANGED, ctx);
+    lv_obj_add_event_cb(textarea, onV2FieldFocused, LV_EVENT_FOCUSED, ctx);
+    lv_obj_add_event_cb(textarea, onV2FieldDefocused, LV_EVENT_DEFOCUSED, ctx);
+    if (!ctx->initialPassword.empty()) {
+        lv_textarea_set_text(textarea, ctx->initialPassword.c_str());
+    }
+
+    auto* eye = lv_button_create(field);
+    lv_obj_set_pos(eye, 120, 0);
+    lv_obj_set_size(eye, 40, 40);
+    lv_obj_set_style_bg_opa(eye, LV_OPA_TRANSP, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(eye, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_shadow_width(eye, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(eye, 0, LV_STATE_DEFAULT);
+    lv_obj_t* eye_icon = mobile::createIcon(eye, MobileIcon::Eye, mobile::COLOR_TEXT_2);
+    lv_obj_center(eye_icon);
+    lv_obj_add_event_cb(eye, onV2EyePressed, LV_EVENT_SHORT_CLICKED, ctx);
+
+    auto* join = mobile::createButton(content, "Join", true);
+    ctx->v2_join = join;
+    ctx->connect_button = join;
+    lv_obj_set_pos(join, 180, 8);
+    lv_obj_set_size(join, 48, 40);
+    lv_obj_add_event_cb(join, onConnectPressed, LV_EVENT_SHORT_CLICKED, ctx);
+
+    ctx->v2_caption = mobile::createLabel(content, "WPA2 · case-sensitive", FONT_SIZE_SMALL, mobile::COLOR_TEXT_2);
+    lv_obj_set_pos(ctx->v2_caption, 16, 56);
+
+    ctx->v2_error = mobile::createLabel(content, "", FONT_SIZE_SECONDARY, mobile::COLOR_ACCENT_TEXT);
+    lv_obj_set_pos(ctx->v2_error, 12, 52);
+    lv_obj_set_width(ctx->v2_error, 216);
+    lv_label_set_long_mode(ctx->v2_error, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_hidden(ctx->v2_error, true);
+    ctx->connection_error = ctx->v2_error;
+
+    lv_group_focus_obj(textarea);
+    updateV2Join(ctx);
+}
+
+#endif // CONFIG_TT_MOBILE_HOME
+
 void resetErrors(Context* ctx) {
-    lv_obj_set_hidden(ctx->password_error, true);
-    lv_obj_set_hidden(ctx->ssid_error, true);
-    lv_obj_set_hidden(ctx->connection_error, true);
+    if (ctx->password_error != nullptr) {
+        lv_obj_set_hidden(ctx->password_error, true);
+    }
+    if (ctx->ssid_error != nullptr) {
+        lv_obj_set_hidden(ctx->ssid_error, true);
+    }
+    if (ctx->connection_error != nullptr) {
+        lv_obj_set_hidden(ctx->connection_error, true);
+    }
+#if defined(CONFIG_TT_MOBILE_HOME)
+    if (ctx->v2) {
+        hideV2Message(ctx);
+    }
+#endif
 }
 
 void setLoading(Context* ctx, bool loading) {
     if (loading) {
-        lv_obj_set_hidden(ctx->connect_button, true);
-        lv_obj_set_hidden(ctx->connecting_spinner, false);
-        lv_obj_add_state(ctx->password_textarea, LV_STATE_DISABLED);
-        lv_obj_add_state(ctx->ssid_textarea, LV_STATE_DISABLED);
-        lv_obj_add_state(ctx->remember_checkbox, LV_STATE_DISABLED);
+        if (ctx->connect_button != nullptr) {
+            lv_obj_set_hidden(ctx->connect_button, true);
+        }
+        if (ctx->connecting_spinner != nullptr) {
+            lv_obj_set_hidden(ctx->connecting_spinner, false);
+        }
+        if (ctx->password_textarea != nullptr) {
+            lv_obj_add_state(ctx->password_textarea, LV_STATE_DISABLED);
+        }
+        if (ctx->ssid_textarea != nullptr) {
+            lv_obj_add_state(ctx->ssid_textarea, LV_STATE_DISABLED);
+        }
+        if (ctx->remember_checkbox != nullptr) {
+            lv_obj_add_state(ctx->remember_checkbox, LV_STATE_DISABLED);
+        }
+#if defined(CONFIG_TT_MOBILE_HOME)
+        if (ctx->v2) {
+            showV2Message(ctx, "Joining…", mobile::COLOR_TEXT_2);
+        }
+#endif
     } else {
-        lv_obj_set_hidden(ctx->connect_button, false);
-        lv_obj_set_hidden(ctx->connecting_spinner, true);
-        lv_obj_remove_state(ctx->password_textarea, LV_STATE_DISABLED);
-        lv_obj_remove_state(ctx->ssid_textarea, LV_STATE_DISABLED);
-        lv_obj_remove_state(ctx->remember_checkbox, LV_STATE_DISABLED);
+        if (ctx->connect_button != nullptr) {
+            lv_obj_set_hidden(ctx->connect_button, false);
+        }
+        if (ctx->connecting_spinner != nullptr) {
+            lv_obj_set_hidden(ctx->connecting_spinner, true);
+        }
+        if (ctx->password_textarea != nullptr) {
+            lv_obj_remove_state(ctx->password_textarea, LV_STATE_DISABLED);
+        }
+        if (ctx->ssid_textarea != nullptr) {
+            lv_obj_remove_state(ctx->ssid_textarea, LV_STATE_DISABLED);
+        }
+        if (ctx->remember_checkbox != nullptr) {
+            lv_obj_remove_state(ctx->remember_checkbox, LV_STATE_DISABLED);
+        }
+#if defined(CONFIG_TT_MOBILE_HOME)
+        if (ctx->v2) {
+            hideV2Message(ctx);
+            updateV2Join(ctx);
+        }
+#endif
     }
 }
 
@@ -134,36 +350,67 @@ void updateView(Context* ctx) {
     if (ctx->connectionError) {
         setLoading(ctx, false);
         resetErrors(ctx);
-        lv_label_set_text(ctx->connection_error, "Connection failed");
-        lv_obj_set_hidden(ctx->connection_error, false);
+#if defined(CONFIG_TT_MOBILE_HOME)
+        if (ctx->v2) {
+            showV2Message(ctx, "Wrong password. Check it and try again.", mobile::COLOR_ACCENT_TEXT);
+        } else
+#endif
+        {
+            if (ctx->connection_error != nullptr) {
+                lv_label_set_text(ctx->connection_error, "Connection failed");
+                lv_obj_set_hidden(ctx->connection_error, false);
+            }
+        }
     }
 }
 
 void onConnectPressed(lv_event_t* event) {
     auto* ctx = static_cast<Context*>(lv_event_get_user_data(event));
+    if (ctx->connecting) {
+        return;
+    }
 
     ctx->connectionError = false;
     resetErrors(ctx);
 
-    const char* ssid = lv_textarea_get_text(ctx->ssid_textarea);
+    const char* ssid = ctx->ssid_textarea != nullptr ? lv_textarea_get_text(ctx->ssid_textarea) : ctx->initialSsid.c_str();
     size_t ssid_len = strlen(ssid);
     if (ssid_len > WIFI_SETTINGS_SSID_LIMIT) {
         LOG_E(TAG, "SSID too long");
-        lv_label_set_text(ctx->ssid_error, "SSID too long");
-        lv_obj_set_hidden(ctx->ssid_error, false);
+        if (ctx->ssid_error != nullptr) {
+            lv_label_set_text(ctx->ssid_error, "SSID too long");
+            lv_obj_set_hidden(ctx->ssid_error, false);
+        }
+#if defined(CONFIG_TT_MOBILE_HOME)
+        else if (ctx->v2) {
+            showV2Message(ctx, "Network name too long", mobile::COLOR_ACCENT_TEXT);
+        }
+#endif
         return;
     }
 
-    const char* password = lv_textarea_get_text(ctx->password_textarea);
+    const char* password = ctx->password_textarea != nullptr ? lv_textarea_get_text(ctx->password_textarea) : "";
+    if (ctx->v2 && password[0] == '\0') {
+        return;
+    }
     size_t password_len = strlen(password);
     if (password_len > WIFI_SETTINGS_PASSWORD_LIMIT) {
         LOG_E(TAG, "Password too long");
-        lv_label_set_text(ctx->password_error, "Password too long");
-        lv_obj_set_hidden(ctx->password_error, false);
+        if (ctx->password_error != nullptr) {
+            lv_label_set_text(ctx->password_error, "Password too long");
+            lv_obj_set_hidden(ctx->password_error, false);
+        }
+#if defined(CONFIG_TT_MOBILE_HOME)
+        else if (ctx->v2) {
+            showV2Message(ctx, "Password too long", mobile::COLOR_ACCENT_TEXT);
+        }
+#endif
         return;
     }
 
-    bool store = lv_obj_get_state(ctx->remember_checkbox) & LV_STATE_CHECKED;
+    bool store = ctx->remember_checkbox != nullptr
+        ? (lv_obj_get_state(ctx->remember_checkbox) & LV_STATE_CHECKED) != 0
+        : true;
 
     setLoading(ctx, true);
 
@@ -235,6 +482,11 @@ void destroyWidgets(void* userData) {
     ctx->remember_checkbox = nullptr;
     ctx->connecting_spinner = nullptr;
     ctx->connection_error = nullptr;
+    ctx->v2 = false;
+    ctx->v2_field = nullptr;
+    ctx->v2_caption = nullptr;
+    ctx->v2_error = nullptr;
+    ctx->v2_join = nullptr;
 }
 
 /** A transparent row: "Title          [content]" */
@@ -274,6 +526,14 @@ void createWidgets(lv_obj_t* parent, void* userData) {
 
     lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
+
+#if defined(CONFIG_TT_MOBILE_HOME)
+    if (isV2Screen(ctx)) {
+        ctx->v2 = true;
+        createV2Widgets(ctx, parent);
+        return;
+    }
+#endif
 
     auto* toolbar = lvgl_toolbar_create(parent, "Wi-Fi Connect");
     // The global toolbar nav callback only knows how to stop old-model apps.

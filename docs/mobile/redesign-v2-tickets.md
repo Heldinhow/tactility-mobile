@@ -458,14 +458,14 @@ the Go accent match the design.
 
 ## RV2-16: The Wi-Fi password screen
 
+**Status:** done
+
 **What to build:** For a protected network, replace the generic form with the v2 password screen:
 SSID title 22, field 160x40 at (12,76) with an accent focus border, 15 px dots, a static 2x18 caret,
 an eye in a 40x40 target, Join 48x40 (unavailable while empty), the WPA2 caption at y=124 and a 13 px
 error line; the v2 keyboard fills y=152–320. Hidden SSIDs keep the existing form.
 
 **Blocked by:** RV2-01, RV2-13, RV2-15.
-
-**Status:** ready-for-agent
 
 **Test seam:** No new pure seam; the existing formatting seam and the simulator capture.
 
