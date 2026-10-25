@@ -10,6 +10,7 @@ typedef void (*OnDisconnect)();
 typedef void (*OnShowApSettings)(const std::string& ssid);
 typedef void (*OnConnectToHidden)();
 typedef void (*OnRefresh)();
+typedef void (*OnForget)(const std::string& ssid);
 
 struct Bindings{
     OnWifiToggled onWifiToggled;
@@ -18,6 +19,7 @@ struct Bindings{
     OnShowApSettings onShowApSettings;
     OnConnectToHidden onConnectToHidden;
     OnRefresh onRefresh;
+    OnForget onForget;
 };
 
 } // namespace

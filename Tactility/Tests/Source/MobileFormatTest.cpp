@@ -27,6 +27,15 @@ TEST_CASE("on and off are the radio words") {
     CHECK_EQ(std::string(formatOnOff(false)), "Off");
 }
 
+TEST_CASE("RSSI maps to the three signal buckets") {
+    CHECK_EQ(rssiBucket(-30), 3);
+    CHECK_EQ(rssiBucket(-60), 3);
+    CHECK_EQ(rssiBucket(-61), 2);
+    CHECK_EQ(rssiBucket(-75), 2);
+    CHECK_EQ(rssiBucket(-76), 1);
+    CHECK_EQ(rssiBucket(-90), 1);
+}
+
 TEST_CASE("the timeout uses seconds below a minute and whole minutes above") {
     CHECK_EQ(formatTimeout(0), "Never");
     CHECK_EQ(formatTimeout(15000), "15 s");

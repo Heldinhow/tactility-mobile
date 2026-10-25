@@ -40,6 +40,17 @@ namespace {
 
 using namespace std::chrono_literals;
 
+/** Turns the mock radio on and joins its fixture AP (the Wi-Fi app dispatches the same calls) */
+void connectFixtureWifi() {
+    Device* device = nullptr;
+    if (device_get_first_by_type(&WIFI_TYPE, &device) != ERROR_NONE) {
+        return;
+    }
+    wifi_set_radio_on(device);
+    wifi_station_connect(device, "Home Wifi", "", 0);
+    device_put(device);
+}
+
 void startApp(const char* app_id) {
     AppStartContext start_context;
     uint32_t instance_id = 0;
@@ -107,6 +118,8 @@ static void runDevAction(int index) {
                 startApp("tactility.settings");
                 break;
             case 3:
+                connectFixtureWifi();
+                std::this_thread::sleep_for(400ms);
                 startApp("tactility.wifimanage");
                 break;
             case 4:
@@ -140,8 +153,10 @@ static void runDevAction(int index) {
                 showLock();
                 break;
             case 8:
+                connectFixtureWifi();
+                std::this_thread::sleep_for(400ms);
                 startApp("tactility.wifimanage");
-                std::this_thread::sleep_for(700ms);
+                std::this_thread::sleep_for(900ms);
                 tt::app::alertdialog::start(
                     0,
                     "Forget network?",

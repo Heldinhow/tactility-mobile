@@ -46,6 +46,21 @@ inline const char* formatOnOff(bool enabled) {
 }
 
 /**
+ * The signal strength bucket that picks the sig1/sig2/sig3 mask.
+ * @param[in] rssi the access point's RSSI in dBm
+ * @return 3 for at least -60 dBm, 2 for at least -75 dBm, otherwise 1
+ */
+inline int rssiBucket(int rssi) {
+    if (rssi >= -60) {
+        return 3;
+    }
+    if (rssi >= -75) {
+        return 2;
+    }
+    return 1;
+}
+
+/**
  * The auto screen-off timeout.
  * @param[in] milliseconds 0 for never, otherwise rounded up to whole seconds below a minute and
  * to whole minutes from a minute up (65500 -> "1 min", 90000 -> "2 min")

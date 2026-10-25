@@ -382,7 +382,7 @@ a protected network still opens the existing connect form until RV2-16.
 
 **Blocked by:** RV2-01, RV2-03, RV2-04, RV2-05, RV2-06, RV2-12.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Test seam:** Seam 2 (mobile formatting), extended with the SSID state and the RSSI buckets.
 
