@@ -11,7 +11,8 @@
 #include <Tactility/lvgl/SystemRecents.h>
 #include <Tactility/lvgl/SystemWindow.h>
 
-#if defined(CONFIG_TT_MOBILE_HOME)
+// The lock service is an ESP-only service; the simulator has no display-idle service
+#if defined(CONFIG_TT_MOBILE_HOME) && defined(ESP_PLATFORM)
 #include <Tactility/service/displayidle/DisplayIdleService.h>
 #endif
 
@@ -115,7 +116,7 @@ void onHoldTimer(lv_timer_t* timer) {
         clearPress();
         return;
     }
-#if defined(CONFIG_TT_MOBILE_HOME)
+#if defined(CONFIG_TT_MOBILE_HOME) && defined(ESP_PLATFORM)
     auto display_idle = service::displayidle::findService();
     if (display_idle != nullptr && display_idle->isLocked()) {
         // The press woke the display; it must not hold its way into the recents switcher
@@ -166,7 +167,7 @@ void onIndevPressed(lv_event_t* event) {
     lv_point_t point;
     lv_indev_get_point(indev, &point);
 
-#if defined(CONFIG_TT_MOBILE_HOME)
+#if defined(CONFIG_TT_MOBILE_HOME) && defined(ESP_PLATFORM)
     auto display_idle = service::displayidle::findService();
     if (display_idle != nullptr && display_idle->isLocked()) {
         if (!display_idle->isLockScreenVisible()) {
@@ -231,7 +232,7 @@ void onIndevReleased(lv_event_t* event) {
     lv_point_t point;
     lv_indev_get_point(indev, &point);
 
-#if defined(CONFIG_TT_MOBILE_HOME)
+#if defined(CONFIG_TT_MOBILE_HOME) && defined(ESP_PLATFORM)
     auto display_idle = service::displayidle::findService();
     if (display_idle != nullptr && display_idle->isLocked()) {
         if (display_idle->isLockScreenVisible() && press_started_locked && systemGestureIsSwipeUp(press.x, press.y, point.x, point.y)) {

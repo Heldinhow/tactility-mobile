@@ -133,6 +133,8 @@ else ()
     add_compile_definitions(CONFIG_TT_USER_DATA_LOCATION_INTERNAL)
     # The simulator runs the mobile presentation so the 240x320 screens can be checked against the mockups
     add_compile_definitions(CONFIG_TT_MOBILE_HOME=1)
+    # Edge gestures and the Recents switcher are part of the mobile design
+    add_compile_definitions(CONFIG_TT_SYSTEM_GESTURES=1)
 
 endif ()
 

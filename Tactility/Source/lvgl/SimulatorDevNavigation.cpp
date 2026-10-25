@@ -125,14 +125,15 @@ static void runDevAction(int index) {
                 break;
             }
             case 6:
+                // The simulator serialises app starts, so give each window time to exist
                 startApp("tactility.wifimanage");
-                std::this_thread::sleep_for(300ms);
+                std::this_thread::sleep_for(1200ms);
                 startApp("tactility.notes");
-                std::this_thread::sleep_for(300ms);
-                startApp("tactility.terminal");
-                std::this_thread::sleep_for(300ms);
+                std::this_thread::sleep_for(1200ms);
+                startApp("tactility.settings");
+                std::this_thread::sleep_for(1200ms);
                 startApp("tactility.files");
-                std::this_thread::sleep_for(800ms);
+                std::this_thread::sleep_for(2500ms);
                 tt::lvgl::systemRecentsShow();
                 break;
             case 7:
@@ -193,10 +194,15 @@ static void runActionList(void* context) {
     }
 }
 
+/** Runs on the LVGL task, the only context the SDL main loop may hand work to */
+static void startSequence(void* context) {
+    tt::dispatchOnMainDispatcher(runActionList, context);
+}
+
 void simulatorDevActionList(const char* list) {
     auto* actions = new std::string(list);
     lvgl_lock();
-    lv_async_call(runActionList, actions);
+    lv_async_call(startSequence, actions);
     lvgl_unlock();
 }
 
