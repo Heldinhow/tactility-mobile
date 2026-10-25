@@ -7,8 +7,10 @@
 #include <cstddef>
 #include <cstring>
 #include <ctime>
+#include <iterator>
 #include <new>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <lvgl/fonts.h>
@@ -58,11 +60,8 @@ constexpr const char* HOME_PINNED_IDS[] = {
     "tactility.wifimanage",
 };
 
-std::vector<std::string> getPinnedIds() {
-    std::vector<std::string> ids;
-    for (const char* id : HOME_PINNED_IDS) {
-        ids.emplace_back(id);
-    }
+const std::vector<std::string>& getPinnedIds() {
+    static const std::vector<std::string> ids(std::begin(HOME_PINNED_IDS), std::end(HOME_PINNED_IDS));
     return ids;
 }
 #endif
@@ -106,6 +105,8 @@ struct Context {
     lv_obj_t* dateLabel = nullptr;
     lv_timer_t* clockTimer = nullptr;
     lvgl::ClockFont* clockFont = nullptr;
+    /** Set while createWidgets() builds, so the grid and the dock share one collection */
+    const std::vector<HomeApp>* buildApps = nullptr;
     char dateText[32] = {};
     DockEntry dockEntries[4] = {};
     size_t dockEntryCount = 0;
@@ -129,17 +130,28 @@ struct Context {
 #endif
 };
 
+#if defined(CONFIG_TT_MOBILE_HOME)
+std::vector<TileGridItem> resolveHomeTiles(Context* ctx, const std::vector<HomeApp>& apps) {
+    const HomeView view = ctx->mode == Mode::Settings ? HomeView::Settings : HomeView::Apps;
+    std::vector<HomeItem> resolved = resolveHomeItems(view, apps, getPinnedIds());
+    std::vector<TileGridItem> items;
+    items.reserve(resolved.size());
+    for (auto& item : resolved) {
+        // Move the strings: the intermediate model stops holding them
+        items.push_back(TileGridItem { std::move(item.id), std::move(item.name), item.icon, item.highlighted });
+    }
+    return items;
+}
+#endif
+
 std::vector<TileGridItem> collectItems(void* userData) {
     auto* ctx = static_cast<Context*>(userData);
 #if defined(CONFIG_TT_MOBILE_HOME)
-    const HomeView view = ctx->mode == Mode::Settings ? HomeView::Settings : HomeView::Apps;
-    const std::vector<HomeItem> resolved = resolveHomeItems(view, collectHomeApps(), getPinnedIds());
-    std::vector<TileGridItem> items;
-    items.reserve(resolved.size());
-    for (const auto& item : resolved) {
-        items.push_back(TileGridItem { item.id, item.name, item.icon, item.highlighted });
-    }
-    return items;
+    // The build provides the collection so the grid and the dock share one; a later repopulate
+    // (mode switch, favourites loaded) collects on its own.
+    return ctx->buildApps != nullptr
+        ? resolveHomeTiles(ctx, *ctx->buildApps)
+        : resolveHomeTiles(ctx, collectHomeApps());
 #else
     return getLauncherMode(ctx->mode).collect();
 #endif
@@ -321,7 +333,7 @@ static void onDockClicked(lv_event_t* event) {
     }
 }
 
-static void createDock(lv_obj_t* parent, Context* ctx) {
+static void createDock(lv_obj_t* parent, Context* ctx, const std::vector<HomeApp>& apps) {
     auto* dock = lvgl_card_create(parent);
     lv_obj_set_size(dock, LV_PCT(100), LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(dock, LV_FLEX_FLOW_ROW);
@@ -331,7 +343,7 @@ static void createDock(lv_obj_t* parent, Context* ctx) {
     lv_obj_set_scrollable(dock, false);
 
     ctx->dockEntryCount = 0;
-    const auto items = resolveDockItems(collectHomeApps());
+    const auto items = resolveDockItems(apps);
     const auto icon_height = static_cast<int32_t>(lvgl_get_shared_icon_default_font_height());
     for (const auto& item : items) {
         if (ctx->dockEntryCount >= 4) {
@@ -360,11 +372,17 @@ void createWidgets(lv_obj_t* parent, void* userData) {
     lv_obj_set_style_pad_row(parent, 0, LV_STATE_DEFAULT);
 
 #if defined(CONFIG_TT_MOBILE_HOME)
+    // Collect once: the grid and the dock both need the app list
+    const std::vector<HomeApp> apps = collectHomeApps();
+    ctx->buildApps = &apps;
+
     createHomeHeader(parent, ctx);
     applyIconColor(ctx);
     ctx->grid.setSwipeNavigation(true);
     ctx->grid.createWidgets(parent);
-    createDock(parent, ctx);
+
+    ctx->buildApps = nullptr;
+    createDock(parent, ctx, apps);
 #else
     applyIconColor(ctx);
     ctx->grid.setSwipeNavigation(true);
@@ -435,6 +453,13 @@ void runAutoStart(void*) {
 int32_t appMain(int argc, char* argv[]) {
     uint32_t appInstanceId = app_scheduler_current_app_id();
 
+    // The launcher's task stack is small (see the manifest), so the context lives on the heap
+    auto* ctx = new (::std::nothrow) Context();
+    if (ctx == nullptr) {
+        LOG_E(TAG, "Failed to allocate the launcher context");
+        return -1;
+    }
+
     TaskEventGroup event_group {};
     task_event_group_construct(&event_group);
 
@@ -444,8 +469,15 @@ int32_t appMain(int argc, char* argv[]) {
     FileOpsSubscription file_ops_sub {};
     check(file_ops_subscribe(&file_ops_sub, &event_group) == ERROR_NONE);
 
-    Context ctx;
-    WindowId window = window_manager_create_ext(appInstanceId, createWidgets, destroyWidgets, &ctx);
+    WindowId window = window_manager_create_ext(appInstanceId, createWidgets, destroyWidgets, ctx);
+    if (window == 0) {
+        LOG_E(TAG, "Failed to create the launcher window");
+        delete ctx;
+        file_ops_unsubscribe(&file_ops_sub);
+        check(app_event_unsubscribe(&sub) == ERROR_NONE);
+        task_event_group_destruct(&event_group);
+        return -1;
+    }
 
     // The file operations run in order: the favourites are available when auto-start runs
     check(file_ops_queue(loadFavourites, nullptr, &file_ops_sub) == ERROR_NONE);
@@ -459,7 +491,7 @@ int32_t appMain(int argc, char* argv[]) {
         if (file_ops_poll(&file_ops_sub) == ERROR_NONE) {
             // The favourites were loaded
             lvgl_lock();
-            ctx.grid.requestRepopulate(false);
+            ctx->grid.requestRepopulate(false);
             lvgl_unlock();
         }
 
@@ -475,6 +507,7 @@ int32_t appMain(int argc, char* argv[]) {
     }
 
     window_manager_remove(window);
+    delete ctx;
     file_ops_unsubscribe(&file_ops_sub);
     check(app_event_unsubscribe(&sub) == ERROR_NONE);
     task_event_group_destruct(&event_group);

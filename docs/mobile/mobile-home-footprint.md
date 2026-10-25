@@ -97,3 +97,63 @@ target; if it matters, the resolver can fill the grid vector directly in a follo
 - Existing decorative screensavers and None still work when selected instead of Lock.
 - No bypass: statusbar quick panel and recents cannot be pulled over the lock; unlocking leaves the
   window stack untouched.
+
+## Boot crash fix (a504731f)
+
+Spec: `docs/mobile/boot-crash-spec.md`. Tickets: `docs/mobile/boot-crash-tickets.md`.
+
+The Home build runs on the launcher app task, not on the LVGL task: `lvgl_run_on_task()` only takes
+the LVGL lock and runs inline (`Modules/lvgl-module/source/arch/lvgl_esp32.c:46`). That task's
+manifest asks for `.depth = 3072`, and on ESP-IDF `StackType_t` is one byte, so its stack is 3 KB,
+not the 12 KB the "words" comment implied. The Home's header, clock font, dock and model pushed
+that path over the limit on every boot.
+
+### Size (same build method as above)
+
+| Metric | Before (a504731f) | After | Delta |
+|---|---:|---:|---:|
+| `Tactility.bin` | 3,894,512 B | 3,894,864 B | **+352 B** |
+| Flash `.text` (code) | 2,777,186 B | 2,777,422 B | +236 B |
+| Flash `.rodata` | 965,104 B | 965,216 B | +112 B |
+| Static DRAM (`.data` + `.bss`) | 65,007 B | 65,039 B | **+32 B** |
+| DIRAM in use | 167,526 B | 167,558 B | +32 B |
+| IRAM | 16,384 B | 16,384 B | 0 B |
+
+The +32 B of static DRAM is the function-local `std::vector<std::string>` object for the pinned ids
+(24 B) plus its guard/alignment.
+
+### Runtime memory
+
+| Item | Delta |
+|---|---:|
+| `Context` moved from the app stack to the heap | +~400 B internal heap, permanent while the launcher runs |
+| Pinned id strings kept in a function-local static | +~110 B heap, permanent |
+| One `collectHomeApps()` per Home build instead of two | −~3 KB of transient heap churn and one manifest/package scan per build |
+| Resolved ids and names moved into `TileGridItem` | −~250 B of transient heap (no duplicate strings) |
+
+### Stack
+
+Frames measured from the ELF (`entry a1`), deepest Home-build chain, app side only:
+
+| B (before) | B (after) | Function |
+|---:|---:|---|
+| 448 | 224 | `appMain` (`Context` no longer on the stack) |
+| 112 | 112 | `window_manager_create_ext` |
+| 48 | 48 | `build_window_widget` |
+| 32 | 32 | `build_window_widget_locked` |
+| 32 | 32 | `lvgl_run_on_task` |
+| 48 | 48 | `createWidgets` |
+| 160 | 160 | `TileGrid::populate` |
+| 128 | 48 | `collectItems` |
+| — | 112 | `resolveHomeTiles` (new helper) |
+| 112 | 112 | `resolveHomeItems` |
+| ~96 | 48 | `getPinnedIds` (no allocation) |
+| ~500 | ~500 | `std::sort`/heap machinery, ≈4-5 levels |
+| **~1,716** | **~1,514** | **app-side total (−202 B)** |
+
+The remaining chain is LVGL object creation, whose frames this binutils cannot decode past
+`lv_obj_create` (the disassembly comes back empty for that section), so it is not in the table.
+From the crash we know the pre-fix total exceeded 3,072 B, which puts the LVGL part at ≥1.35 KB;
+the post-fix estimate is therefore ~2.9 KB of 3,072 B, a margin below the 25% gate. That is why
+`boot-crash-tickets.md` (BC-06) proposes raising `.depth` to 6144 B (+3 KB PSRAM, no internal RAM,
+no flash), and why the on-device high-water reading is still the gate before that value is final.
